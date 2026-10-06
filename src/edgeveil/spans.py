@@ -13,6 +13,7 @@ class EntityType(StrEnum):
     CREDENTIAL = "CREDENTIAL"
     SSN = "SSN"
     CREDIT_CARD = "CREDIT_CARD"
+    GOV_ID = "GOV_ID"
 
 
 class SpanSource(StrEnum):
@@ -24,6 +25,13 @@ class InvalidSpanError(ValueError):
     pass
 
 
+def check_offsets(start: int, end: int) -> None:
+    if start < 0:
+        raise InvalidSpanError(f"span start {start} is negative")
+    if end <= start:
+        raise InvalidSpanError(f"span end {end} must be greater than start {start}")
+
+
 @dataclass(frozen=True, slots=True)
 class Span:
     start: int
@@ -33,12 +41,7 @@ class Span:
     source: SpanSource
 
     def __post_init__(self) -> None:
-        if self.start < 0:
-            raise InvalidSpanError(f"span start {self.start} is negative")
-        if self.end <= self.start:
-            raise InvalidSpanError(
-                f"span end {self.end} must be greater than start {self.start}"
-            )
+        check_offsets(self.start, self.end)
         if not MIN_SCORE <= self.score <= MAX_SCORE:
             raise InvalidSpanError(
                 f"span score {self.score} is outside [{MIN_SCORE}, {MAX_SCORE}]"
@@ -46,3 +49,13 @@ class Span:
 
     def overlaps(self, other: "Span") -> bool:
         return self.start < other.end and other.start < self.end
+
+
+@dataclass(frozen=True, slots=True)
+class GoldSpan:
+    start: int
+    end: int
+    label: EntityType
+
+    def __post_init__(self) -> None:
+        check_offsets(self.start, self.end)
