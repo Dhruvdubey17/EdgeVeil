@@ -16,8 +16,10 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - run: uv sync --locked
+      - run: uv sync --locked --all-extras
       - run: uv run --no-sync ruff format --check .
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync pyright
       - run: uv run --no-sync --offline pytest
+        env:
+          HF_HUB_OFFLINE: "1"

@@ -81,3 +81,10 @@ addopts = ["--disable-socket", "--allow-unix-socket", "--strict-markers"]
 [tool.coverage.report]
 exclude_also = ["if TYPE_CHECKING:", "class .*\\(Protocol\\):"]
 
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
