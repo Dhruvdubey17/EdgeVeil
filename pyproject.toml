@@ -48,3 +48,27 @@ dev = [
     "pytest-socket>=0.8.1",
     "ruff>=0.16.10",
 ]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "PTH", "PL", "ERA"]
+
+[tool.pyright]
+include = ["src", "tests"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+strict = [
+    "src/edgeveil/__init__.py",
+    "src/edgeveil/spans.py",
+    "src/edgeveil/masker",
+    "src/edgeveil/validators",
+    "src/edgeveil/proxy",
+    "src/edgeveil/cli",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--disable-socket", "--allow-unix-socket", "--strict-markers"]
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:", "class .*\\(Protocol\\):"]
