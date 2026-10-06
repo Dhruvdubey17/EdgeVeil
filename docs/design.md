@@ -28,19 +28,20 @@ The test step sets `HF_HUB_OFFLINE=1` in addition to pytest-socket, so a library
 The training and validation data is `ai4privacy/pii-masking-openpii-1.5m`, English rows only, pinned to revision `a785eb528e28be2693c3718a27e066970de5dadb` in `edgeveil.dataset.openpii`.
 
 - License. It is CC-BY-4.0, which allows a public repo and a published model with attribution. The 300k and 400k sets are academic and non-commercial only and treat models as derivative works. The 500k set carries Llama Community License terms that would force a "Llama" prefix on the model name.
-- No mixing with OpenPII 1M. 1.5M extends 1M, so taking rows from both would duplicate text across the two sources.
+- No mixing with OpenPII 1M. 1.5M extends 1M, so taking rows from both would duplicate text. The English rows of 1.5M split into `source_dataset` values `base` (179,419 rows, the same count as the English rows in 1M's `distribution.json`) and `asia-pacific` (25,230 rows, the en-SG and en-IN additions).
 - Streaming. `edgeveil data download` streams each split and keeps rows whose `language` is `en`. Filtering happens on the client, so the whole JSONL (5.3 GB) still crosses the network once, but only the English subset is written to disk.
 - Pinned revision. ai4privacy updates its dataset repos after release (on 2026-10-06 the Hub API showed a last-modified date of 2026-06-03 for 38 of their 40 datasets). A pinned SHA keeps a rerun on the same rows.
-- Unknown labels raise `UnknownLabelError` rather than becoming O. With a pinned revision this never fires; if someone moves the pin and the label set changes, the mapping fails loudly instead of silently teaching the model that a new PII type is O.
+- Unknown labels raise `UnknownLabelError` in `map_entities` rather than becoming O, so a label the mapping has never seen fails loudly instead of silently teaching the model that a new PII type is O.
 - Writing the subset. `IterableDataset.to_parquet` in datasets 5.1.0 concatenates the streamed Arrow batches with `pa.concat_tables` and does not cast them to the declared features. A batch where every `privacy_mask` is empty is inferred as `list<null>`, and the concatenation fails with `ArrowInvalid: Schema at index 633 was different` after the whole train split has streamed. `Dataset.from_generator` with the stream's features casts each row, so the download writes through it instead.
 
 ## Cleaning before training
 
-`edgeveil data prepare` runs three checks, in this order, and writes only counts to `data/openpii/clean/report.json`.
+`edgeveil data prepare` runs four checks, in this order, and writes only counts to `data/openpii/clean/report.json`.
 
 1. Offsets. For every `privacy_mask` entry, `source_text[start:end]` must equal the stored value. A row with any mismatch is dropped whole. Dropping only the bad entry would leave that PII in the text labeled O, which teaches the model to miss it.
 2. Overlaps. A row whose entries overlap is dropped, because BIO tags cannot represent overlapping spans.
-3. Duplicates. Exact `source_text` duplicates are removed across both splits. When a text is in both, the validation copy is kept and the train copy dropped, so validation stays a fixed set and per-type thresholds tuned on it never see training text. Within a split the first occurrence is kept.
+3. Off-card labels. The card lists 19 labels, but 825 English rows (655 train, 170 validation, all from `asia-pacific`) also carry others: TIME (2,491 entities), USERNAME (29), ORGANISATION (24), CURRENCY, AMOUNT, COUNTRY, URL, BANKNAME, IPV4, ACCOUNTNUM, and a few more. These rows are dropped. Mapping the extra labels to O would teach the model that usernames, IP addresses, and account numbers are not sensitive, and the rows are 0.4% of the English data.
+4. Duplicates. Exact `source_text` duplicates are removed across both splits. When a text is in both, the validation copy is kept and the train copy dropped, so validation stays a fixed set and per-type thresholds tuned on it never see training text. Within a split the first occurrence is kept.
 
 ## Label mapping
 
@@ -50,6 +51,8 @@ The mapping lives in `edgeveil.dataset.openpii`, and `docs/labeling.md` states t
 - TITLE stays outside PERSON. It identifies no one, and keeping `Dr.` in the prompt helps the LLM write a natural reply.
 - ADDRESS merges STREET, BUILDINGNUM, CITY, and ZIPCODE across separators and an optional two-letter region code, which covers the US `City, ST ZIP` layout. A group needs a STREET, BUILDINGNUM, or ZIPCODE to count. A city on its own is common in ordinary text, rarely identifying, and masking it degrades replies.
 - GOV_ID collects IDCARDNUM, PASSPORTNUM, DRIVERLICENSENUM, and TAXNUM. They are identifying, but optional like SSN and CREDIT_CARD, so a deployment can turn them off.
+- Whitespace at either edge of an entity is trimmed before grouping. In the English validation split, 878 TELEPHONENUM spans end in a space, which would otherwise disagree with the hand-labeling rule that spans carry no surrounding whitespace.
+- Address parts separated by a dash do not merge, because a dash is not one of the agreed separators. In the English validation split, CITY is followed by ZIPCODE across ` – ` 853 times and across ` - ` 253 times. Each of those drops the city and keeps the ZIP code as its own ADDRESS span. Unit words such as `Apt.` between a street and a building number split the address in the same way.
 - DATE, AGE, GENDER, SEX, and TITLE map to O. They are quasi-identifiers, outside the v1 entity set.
 
 ## Synthetic credentials
