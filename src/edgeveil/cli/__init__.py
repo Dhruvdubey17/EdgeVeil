@@ -13,6 +13,7 @@ DEFAULT_PROXY_PORT = 8787
 app = typer.Typer(
     help="Mask personal data on the device before prompts reach a cloud LLM.",
     no_args_is_help=True,
+    pretty_exceptions_show_locals=False,
 )
 app.add_typer(data_app, name="data")
 error_console = Console(stderr=True)

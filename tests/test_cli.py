@@ -25,3 +25,7 @@ def test_without_arguments_shows_every_command() -> None:
     result = runner.invoke(app, [])
     for command in ("scan", "proxy", "eval", "bench"):
         assert command in result.output
+
+
+def test_tracebacks_never_show_local_variables() -> None:
+    assert app.pretty_exceptions_show_locals is False
