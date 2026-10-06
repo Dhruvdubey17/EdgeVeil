@@ -64,18 +64,41 @@ def map_entities(text: str, entities: Iterable[RawEntity]) -> list[GoldSpan]:
     reject_unknown_labels(ordered)
     reject_overlaps(ordered)
     spans: list[GoldSpan] = []
-    for group in group_mergeable_parts(text, ordered):
+    for group in group_mergeable_parts(text, trimmed_entities(text, ordered)):
         span = span_for_group(group)
         if span is not None:
             spans.append(span)
     return spans
 
 
-def reject_unknown_labels(entities: Sequence[RawEntity]) -> None:
+def unknown_labels(entities: Iterable[RawEntity]) -> list[str]:
     known = DIRECT_LABELS.keys() | PERSON_PARTS | ADDRESS_PARTS | IGNORED_LABELS
-    unknown = sorted({entity.label for entity in entities} - known)
+    return [entity.label for entity in entities if entity.label not in known]
+
+
+def reject_unknown_labels(entities: Sequence[RawEntity]) -> None:
+    unknown = sorted(set(unknown_labels(entities)))
     if unknown:
         raise UnknownLabelError(f"unmapped OpenPII labels: {', '.join(unknown)}")
+
+
+def trim_whitespace(text: str, entity: RawEntity) -> RawEntity | None:
+    value = text[entity.start : entity.end]
+    without_leading = value.lstrip()
+    start = entity.end - len(without_leading)
+    end = start + len(without_leading.rstrip())
+    if end == start:
+        return None
+    return RawEntity(start=start, end=end, label=entity.label, value=text[start:end])
+
+
+def trimmed_entities(text: str, entities: Iterable[RawEntity]) -> list[RawEntity]:
+    trimmed: list[RawEntity] = []
+    for entity in entities:
+        kept = trim_whitespace(text, entity)
+        if kept is not None:
+            trimmed.append(kept)
+    return trimmed
 
 
 def reject_overlaps(entities: Sequence[RawEntity]) -> None:

@@ -206,3 +206,19 @@ def test_output_is_sorted_disjoint_and_keeps_direct_entities(
         if entity.label in DIRECT_LABELS
     ]
     assert set(direct) <= set(spans)
+
+
+def test_whitespace_at_entity_edges_is_trimmed() -> None:
+    assert mapped("Call ", ("TELEPHONENUM", " 555-0100 "), "now") == [
+        ("555-0100", EntityType.PHONE)
+    ]
+
+
+def test_whitespace_only_entity_is_dropped() -> None:
+    assert mapped("a", ("EMAIL", "  "), "b") == []
+
+
+def test_trimmed_person_parts_still_merge() -> None:
+    assert mapped(("GIVENNAME", "Ada "), ("SURNAME", " Quill")) == [
+        ("Ada  Quill", EntityType.PERSON)
+    ]

@@ -17,6 +17,7 @@ from edgeveil.dataset.openpii import (
     map_entities,
     mismatched_labels,
     parse_privacy_mask,
+    unknown_labels,
 )
 from edgeveil.spans import GoldSpan
 
@@ -36,7 +37,9 @@ class SplitCleaning:
     raw_rows: int = 0
     rows_with_offset_mismatch: int = 0
     rows_with_overlapping_entities: int = 0
+    rows_with_off_card_labels: int = 0
     mismatched_entities_by_label: Counter[str] = field(default_factory=Counter[str])
+    off_card_labels: Counter[str] = field(default_factory=Counter[str])
     raw_rows_by_source_dataset: Counter[str] = field(default_factory=Counter[str])
 
 
@@ -48,6 +51,8 @@ class PreparationReport:
     rows_with_offset_mismatch: dict[str, int]
     mismatched_entities_by_label: dict[str, int]
     rows_with_overlapping_entities: dict[str, int]
+    rows_with_off_card_labels: dict[str, int]
+    off_card_labels: dict[str, int]
     train_dropped_as_in_validation: int
     train_dropped_as_repeat: int
     validation_dropped_as_repeat: int
@@ -75,6 +80,11 @@ def add_clean_row(cleaning: SplitCleaning, record: Mapping[str, Any]) -> None:
     if mismatches:
         cleaning.rows_with_offset_mismatch += 1
         cleaning.mismatched_entities_by_label.update(mismatches)
+        return
+    off_card = unknown_labels(entities)
+    if off_card:
+        cleaning.rows_with_off_card_labels += 1
+        cleaning.off_card_labels.update(off_card)
         return
     try:
         spans = map_entities(text, entities)
@@ -157,6 +167,12 @@ def build_report(
         ),
         rows_with_overlapping_entities=per_split(
             cleanings, lambda cleaning: cleaning.rows_with_overlapping_entities
+        ),
+        rows_with_off_card_labels=per_split(
+            cleanings, lambda cleaning: cleaning.rows_with_off_card_labels
+        ),
+        off_card_labels=merged_counts(
+            cleaning.off_card_labels for cleaning in cleanings.values()
         ),
         train_dropped_as_in_validation=deduplication.train_dropped_as_in_validation,
         train_dropped_as_repeat=deduplication.train_dropped_as_repeat,

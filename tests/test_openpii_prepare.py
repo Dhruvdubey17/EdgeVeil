@@ -49,16 +49,20 @@ OVERLAPPING = {
     ],
 }
 
+OFF_CARD = record(5, "Meet at 10:20am.", ("TIME", "10:20am"))
+
 
 def test_clean_split_keeps_valid_rows_and_counts_dropped_ones() -> None:
-    cleaning = clean_split([GOOD, SHIFTED, OVERLAPPING])
+    cleaning = clean_split([GOOD, SHIFTED, OVERLAPPING, OFF_CARD])
     assert [row.uid for row in cleaning.rows] == [1]
     assert cleaning.rows[0].spans == (GoldSpan(5, 20, EntityType.EMAIL),)
-    assert cleaning.raw_rows == 3
+    assert cleaning.raw_rows == 4
+    assert cleaning.rows_with_off_card_labels == 1
+    assert cleaning.off_card_labels == {"TIME": 1}
     assert cleaning.rows_with_offset_mismatch == 1
     assert cleaning.mismatched_entities_by_label == {"TELEPHONENUM": 1}
     assert cleaning.rows_with_overlapping_entities == 1
-    assert cleaning.raw_rows_by_source_dataset == {SOURCE: 3}
+    assert cleaning.raw_rows_by_source_dataset == {SOURCE: 4}
 
 
 def test_clean_row_repr_hides_text() -> None:

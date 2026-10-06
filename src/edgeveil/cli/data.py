@@ -34,18 +34,18 @@ def prepare(data_dir: DataDir = DEFAULT_DATA_DIR) -> None:
     from edgeveil.dataset.prepare import prepare_openpii
 
     report = prepare_openpii(data_dir)
-    console.print(count_table("Rows", report_rows(report)))
-    console.print(
-        count_table(
-            "Entities in rows dropped for offset mismatch",
-            report.mismatched_entities_by_label,
-        )
-    )
-    console.print(
-        count_table("Raw rows by source dataset", report.raw_rows_by_source_dataset)
-    )
+    tables = {
+        "Rows": report_rows(report),
+        "Entities in rows dropped for offset mismatch": (
+            report.mismatched_entities_by_label
+        ),
+        "Labels in rows dropped as off-card": report.off_card_labels,
+        "Raw rows by source dataset": report.raw_rows_by_source_dataset,
+    }
     for split, counts in report.spans_by_type.items():
-        console.print(count_table(f"Spans by type ({split})", counts))
+        tables[f"Spans by type ({split})"] = counts
+    for title, counts in tables.items():
+        console.print(count_table(title, counts))
 
 
 def report_rows(report: "PreparationReport") -> dict[str, int]:
@@ -58,9 +58,10 @@ def report_rows(report: "PreparationReport") -> dict[str, int]:
         rows[f"{split}: dropped, overlap"] = report.rows_with_overlapping_entities[
             split
         ]
-    rows["train: dropped, text also in validation"] = (
-        report.train_dropped_as_in_validation
-    )
+        rows[f"{split}: dropped, off-card label"] = report.rows_with_off_card_labels[
+            split
+        ]
+    rows["train: dropped, also in validation"] = report.train_dropped_as_in_validation
     rows["train: dropped, repeat"] = report.train_dropped_as_repeat
     rows["validation: dropped, repeat"] = report.validation_dropped_as_repeat
     for split, count in report.kept_rows.items():
