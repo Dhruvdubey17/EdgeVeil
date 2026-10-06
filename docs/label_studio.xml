@@ -1,0 +1,13 @@
+<View>
+  <Labels name="label" toName="text">
+    <Label value="PERSON" background="#4C78A8"/>
+    <Label value="EMAIL" background="#F58518"/>
+    <Label value="PHONE" background="#54A24B"/>
+    <Label value="ADDRESS" background="#B279A2"/>
+    <Label value="CREDENTIAL" background="#E45756"/>
+    <Label value="SSN" background="#72B7B2"/>
+    <Label value="CREDIT_CARD" background="#EECA3B"/>
+    <Label value="GOV_ID" background="#9D755D"/>
+  </Labels>
+  <Text name="text" value="$text"/>
+</View>
