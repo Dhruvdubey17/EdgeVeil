@@ -5,6 +5,8 @@ from typing import Annotated, NoReturn
 import typer
 from rich.console import Console
 
+from edgeveil.cli.data import data_app
+
 NOT_IMPLEMENTED_EXIT_CODE = 1
 DEFAULT_PROXY_PORT = 8787
 
@@ -12,6 +14,7 @@ app = typer.Typer(
     help="Mask personal data on the device before prompts reach a cloud LLM.",
     no_args_is_help=True,
 )
+app.add_typer(data_app, name="data")
 error_console = Console(stderr=True)
 
 
