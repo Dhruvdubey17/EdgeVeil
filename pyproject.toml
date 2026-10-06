@@ -18,6 +18,9 @@ dependencies = [
     "uvicorn>=0.54.0",
 ]
 
+[project.scripts]
+edgeveil = "edgeveil.cli:app"
+
 [project.optional-dependencies]
 train = [
     "datasets>=5.1.0",
