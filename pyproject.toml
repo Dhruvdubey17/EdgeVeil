@@ -1,0 +1,50 @@
+[project]
+name = "edgeveil"
+version = "0.1.0"
+description = "On-device PII masking proxy for cloud LLMs"
+readme = "README.md"
+authors = [
+    { name = "Dhruv Dubey", email = "dd.dhruv1@gmail.com" }
+]
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "onnxruntime>=1.30.0",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "rich>=15.0.0",
+    "typer>=0.27.3",
+    "uvicorn>=0.54.0",
+]
+
+[project.optional-dependencies]
+train = [
+    "datasets>=5.1.0",
+    "seqeval>=1.2.2",
+    "torch>=2.14.1",
+    "transformers>=5.19.0",
+]
+coreml = [
+    "coremltools>=9.0",
+]
+qualcomm = [
+    "qai-hub>=0.56.0",
+]
+eval = [
+    "seqeval>=1.2.2",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "anyio>=4.15.1",
+    "hypothesis>=6.168.5",
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "pytest-socket>=0.8.1",
+    "ruff>=0.16.10",
+]
