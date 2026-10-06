@@ -1,9 +1,11 @@
 import json
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from datasets import IterableDataset, load_dataset
+from datasets import Dataset, IterableDataset, load_dataset
 
 from edgeveil.dataset.openpii import (
     ENGLISH_LANGUAGE_CODE,
@@ -53,11 +55,25 @@ def stream_english_rows(split: str) -> IterableDataset:
     )
 
 
+def iterate_english_rows(split: str) -> Iterator[dict[str, Any]]:
+    yield from stream_english_rows(split)
+
+
+def save_english_split(data_dir: Path, split: str) -> None:
+    subset = Dataset.from_generator(
+        iterate_english_rows,
+        features=stream_english_rows(split).features,
+        cache_dir=str(openpii_raw_dir(data_dir) / "cache"),
+        gen_kwargs={"split": split},
+    )
+    subset.to_parquet(str(raw_split_path(data_dir, split)))
+
+
 def download_english_subset(data_dir: Path) -> DownloadRecord:
     output_dir = openpii_raw_dir(data_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     for split in OPENPII_SPLITS:
-        stream_english_rows(split).to_parquet(raw_split_path(data_dir, split))
+        save_english_split(data_dir, split)
     record = DownloadRecord(
         repository=OPENPII_REPOSITORY,
         revision=OPENPII_REVISION,

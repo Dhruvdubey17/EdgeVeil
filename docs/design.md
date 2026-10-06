@@ -32,6 +32,7 @@ The training and validation data is `ai4privacy/pii-masking-openpii-1.5m`, Engli
 - Streaming. `edgeveil data download` streams each split and keeps rows whose `language` is `en`. Filtering happens on the client, so the whole JSONL (5.3 GB) still crosses the network once, but only the English subset is written to disk.
 - Pinned revision. ai4privacy updates its dataset repos after release (on 2026-10-06 the Hub API showed a last-modified date of 2026-06-03 for 38 of their 40 datasets). A pinned SHA keeps a rerun on the same rows.
 - Unknown labels raise `UnknownLabelError` rather than becoming O. With a pinned revision this never fires; if someone moves the pin and the label set changes, the mapping fails loudly instead of silently teaching the model that a new PII type is O.
+- Writing the subset. `IterableDataset.to_parquet` in datasets 5.1.0 concatenates the streamed Arrow batches with `pa.concat_tables` and does not cast them to the declared features. A batch where every `privacy_mask` is empty is inferred as `list<null>`, and the concatenation fails with `ArrowInvalid: Schema at index 633 was different` after the whole train split has streamed. `Dataset.from_generator` with the stream's features casts each row, so the download writes through it instead.
 
 ## Cleaning before training
 
