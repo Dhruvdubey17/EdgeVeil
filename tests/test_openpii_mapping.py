@@ -12,6 +12,7 @@ from edgeveil.dataset.openpii import (
     RawEntity,
     UnknownLabelError,
     map_entities,
+    name_joints,
 )
 from edgeveil.spans import EntityType, GoldSpan
 
@@ -308,3 +309,27 @@ def test_trimmed_person_parts_still_merge() -> None:
     assert mapped(("GIVENNAME", "Ada "), ("SURNAME", " Quill")) == [
         ("Ada  Quill", EntityType.PERSON)
     ]
+
+
+def joints(*parts: Part) -> list[str]:
+    text, entities = compose(*parts)
+    return [text[start:end] for start, end in name_joints(text, entities)]
+
+
+def test_name_joints_mark_the_space_between_given_name_and_surname() -> None:
+    text, entities = compose("Hi ", ("GIVENNAME", "Ada"), " ", ("SURNAME", "Quill"))
+    assert name_joints(text, entities) == [(6, 7)]
+
+
+@pytest.mark.parametrize(
+    "parts",
+    [
+        (("SURNAME", "Quill"), " ", ("GIVENNAME", "Ada")),
+        (("GIVENNAME", "Ada"), ", ", ("SURNAME", "Quill")),
+        (("GIVENNAME", "Ada"), " B. ", ("SURNAME", "Quill")),
+        (("GIVENNAME", "Ada"), ("SURNAME", "Quill")),
+        (("GIVENNAME", "Ada"), " ", ("GIVENNAME", "Bo")),
+    ],
+)
+def test_other_pairs_have_no_name_joint(parts: tuple[Part, ...]) -> None:
+    assert joints(*parts) == []

@@ -16,6 +16,7 @@ from edgeveil.dataset.openpii import (
     deduplicate_splits,
     map_entities,
     mismatched_labels,
+    name_joints,
     parse_privacy_mask,
     unknown_labels,
 )
@@ -29,6 +30,7 @@ class CleanRow:
     uid: int
     source_text: str = field(repr=False)
     spans: tuple[GoldSpan, ...]
+    name_joints: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(slots=True)
@@ -92,7 +94,12 @@ def add_clean_row(cleaning: SplitCleaning, record: Mapping[str, Any]) -> None:
         cleaning.rows_with_overlapping_entities += 1
         return
     cleaning.rows.append(
-        CleanRow(uid=record["uid"], source_text=text, spans=tuple(spans))
+        CleanRow(
+            uid=record["uid"],
+            source_text=text,
+            spans=tuple(spans),
+            name_joints=tuple(name_joints(text, entities)),
+        )
     )
 
 
@@ -109,6 +116,7 @@ def row_record(row: CleanRow) -> dict[str, Any]:
             {"start": span.start, "end": span.end, "label": span.label.value}
             for span in row.spans
         ],
+        "name_joints": [{"start": start, "end": end} for start, end in row.name_joints],
     }
 
 

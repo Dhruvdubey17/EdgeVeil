@@ -65,6 +65,12 @@ def test_clean_split_keeps_valid_rows_and_counts_dropped_ones() -> None:
     assert cleaning.raw_rows_by_source_dataset == {SOURCE: 4}
 
 
+def test_clean_split_records_name_joints() -> None:
+    row = record(6, "Ask Ada Quill now.", ("GIVENNAME", "Ada"), ("SURNAME", "Quill"))
+    [cleaned] = clean_split([row]).rows
+    assert cleaned.name_joints == ((7, 8),)
+
+
 def test_clean_row_repr_hides_text() -> None:
     [row] = clean_split([GOOD]).rows
     assert "example.com" not in repr(row)
@@ -92,5 +98,6 @@ def test_prepare_writes_deduplicated_clean_splits_and_a_report(tmp_path: Path) -
     )
     assert clean_train["uid"] == [1]
     assert clean_train["spans"] == [[{"start": 5, "end": 20, "label": "EMAIL"}]]
+    assert clean_train["name_joints"] == [[]]
     saved = json.loads((openpii_clean_dir(tmp_path) / REPORT_NAME).read_text())
     assert saved["kept_rows"] == report.kept_rows

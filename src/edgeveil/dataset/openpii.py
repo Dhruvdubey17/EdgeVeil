@@ -261,3 +261,20 @@ def deduplicate_splits(
         train_dropped_as_repeat=len(train_outside_validation) - len(kept_train),
         validation_dropped_as_repeat=len(validation) - len(kept_validation),
     )
+
+
+def is_name_joint(text: str, left: RawEntity, right: RawEntity) -> bool:
+    if left.label != "GIVENNAME" or right.label != "SURNAME":
+        return False
+    gap = text[left.end : right.start]
+    return gap.isspace()
+
+
+def name_joints(text: str, entities: Iterable[RawEntity]) -> list[tuple[int, int]]:
+    ordered = sorted(entities, key=lambda entity: (entity.start, entity.end))
+    trimmed = trimmed_entities(text, ordered)
+    return [
+        (left.end, right.start)
+        for left, right in pairwise(trimmed)
+        if is_name_joint(text, left, right)
+    ]

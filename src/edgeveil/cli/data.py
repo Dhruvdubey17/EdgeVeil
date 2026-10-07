@@ -66,6 +66,12 @@ def augment(
     for split, counts in report.rows_by_origin.items():
         console.print(count_table(f"Rows by origin ({split})", counts))
     console.print(count_table("CREDENTIAL spans", report.credential_spans))
+    console.print(
+        count_table("Name pairs eligible for a connector", report.name_pairs_eligible)
+    )
+    console.print(
+        count_table("Name connectors inserted", report.name_connectors_inserted)
+    )
     for split, share in report.credential_row_share.items():
         console.print(f"{split}: {share:.2%} of rows contain a CREDENTIAL span.")
 
