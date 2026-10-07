@@ -12,6 +12,7 @@ NOT_IMPLEMENTED_EXIT_CODE = 1
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MODELS_DIR = Path("models")
 DEFAULT_LOGGING_STEPS = 100
+DEFAULT_RESULTS_DIR = Path("bench") / "results"
 DEFAULT_PROXY_PORT = 8787
 
 app = typer.Typer(
@@ -116,6 +117,43 @@ def train(
         f"Trained {record.base_model} in {seconds:.0f} s on {record.device}."
     )
     output_console.print(f"Saved to {models_dir / record.preset}.")
+
+
+@app.command(
+    name="tune-thresholds",
+    help="Pick per-type thresholds on validation by maximizing F2, and save them.",
+)
+def tune_thresholds(
+    preset: Annotated[
+        ModelPreset, typer.Option(help="Trained model to tune.")
+    ] = ModelPreset.DISTILBERT,
+    data_dir: Annotated[
+        Path, typer.Option(help="Directory with prepared data.")
+    ] = DEFAULT_DATA_DIR,
+    models_dir: Annotated[
+        Path, typer.Option(help="Directory with trained models.")
+    ] = DEFAULT_MODELS_DIR,
+    results_dir: Annotated[
+        Path, typer.Option(help="Directory for result files.")
+    ] = DEFAULT_RESULTS_DIR,
+    limit: Annotated[
+        int | None,
+        typer.Option(help="Use only the first rows of validation, for smoke runs."),
+    ] = None,
+) -> None:
+    from edgeveil.evaluation.thresholds import tune_thresholds as tune
+    from edgeveil.evaluation.thresholds import write_threshold_results
+
+    report = tune(models_dir / preset.value, data_dir, limit)
+    path = results_dir / "thresholds" / f"{preset.value}-fp32-torch.json"
+    write_threshold_results(report, path)
+    for entity, point in report.chosen.items():
+        output_console.print(
+            f"{entity.value}: threshold {point.threshold:.2f}, "
+            f"precision {point.precision:.3f}, recall {point.recall:.3f}, "
+            f"F2 {point.f_beta:.3f}"
+        )
+    output_console.print(f"Saved to {path}.")
 
 
 @app.command(help="Run benchmarks and regenerate every results table.")
