@@ -67,6 +67,30 @@ Widening the PERSON gap rule changed no training span, because no OpenPII row ha
 
 U+00A0 (no-break space) and U+202F (narrow no-break space) count as whitespace everywhere: `str.isspace` and `str.strip` treat them as whitespace, and `\s` in Python's `re` matches them in str patterns. OpenPII uses U+202F between address parts (for example 243 CITY to ZIPCODE gaps in validation). Tests pin this for gap matching and edge trimming. The validators do not exist yet; their tests will cover the same characters.
 
+## Test set import
+
+- `edgeveil data import-labels` converts a Label Studio JSON export into `data/test/test_set.jsonl`. Each region must carry exactly one known label, its stored text must match its offsets, and it must not start or end with whitespace. Spans in one task must not overlap, and each task needs exactly one annotation that is not cancelled. Problems are listed by task id and offsets, never by text, and nothing is written until the export is clean.
+- Label Studio computes offsets in the browser, where a JavaScript string index counts UTF-16 code units. A character outside the Basic Multilingual Plane (an emoji, for example) counts as two units there and one code point in Python. The converter tries the offsets as code points first, then converts them from UTF-16 and checks the text again.
+- The loader lives in `edgeveil.evaluation.test_set`. A test parses every module under `src/edgeveil` and fails if anything outside `evaluation/` imports it, so training code cannot read the test set.
+- Pydantic models at these boundaries set `hide_input_in_errors=True`, so a validation error never echoes snippet text.
+
+## Windows and alignment
+
+- Texts are cut into windows of `MAX_WINDOW_TOKENS = 512` tokens that overlap by `WINDOW_OVERLAP_TOKENS = 128`. Windowing is done in `edgeveil.detector.windows`, not by the tokenizer. In tokenizers 0.23.2, `return_overflowing_tokens=True` returns at most one overflow window and silently drops the rest of the text: a 20-token input with a 6-token limit and stride 2 came back as two windows covering 6 tokens. Relying on it would leave the end of long inputs unscanned at inference. The text is tokenized once without special tokens, sliced into windows, and each window gets the special tokens the tokenizer adds, learned by encoding a probe string with and without them (transformers 5 removed `build_inputs_with_special_tokens`).
+- Token offsets are trimmed of whitespace, because byte-level BPE tokenizers such as ModernBERT's can include a leading space in a token's offsets.
+- A token that overlaps a span gets that span's label: B on the first such token, I after. A span boundary inside a token widens to the token. A span cut by the start of a window gets B on its first token in that window. The 128-token overlap gives spans near a boundary a second, uncut view in the neighboring window.
+- The decoder treats an I label with no open span of the same type as the start of a new span, which matches seqeval's default mode.
+
+## Training
+
+- Presets in `edgeveil.detector.presets` pin `distilbert/distilbert-base-cased` at `6ea81172465e8b0ad3fddeed32b986cdcdcffcf0` and `answerdotai/ModernBERT-base` at `8949b909ec900327062f0ebf497f51aef5e6f0c8`. Both are Apache-2.0. Hyperparameters (learning rate 5e-5, 2 epochs, batch 32, 6% warmup, weight decay 0.01) are starting values, not tuned.
+- Class weights are `(N / (K * n_c)) ** 0.5`, capped at 10, where `n_c` is the count of BIO class `c` among training tokens and `K` is the number of classes. The square root keeps rare classes from dominating the loss, and the cap covers classes with very few tokens.
+- The weighted loss is passed as `compute_loss_func`. Trainer then treats the returned loss as already normalized over the whole accumulated batch, so `GRADIENT_ACCUMULATION_STEPS` is fixed at 1, where a per-batch weighted mean is correct.
+- transformers 5.19 removed `warmup_ratio`; `warmup_steps` takes a float in [0, 1) as a share of total steps.
+- seqeval's `classification_report` has no type hints, so pyright reads `zero_division` as `str` and the return as `str`. It is called with the default `zero_division="warn"`, which also scores a class with no predictions as 0.0, with `UndefinedMetricWarning` silenced for that call, and the result is cast to a dict.
+- Logits are reduced to argmax label ids before Trainer gathers them (`preprocess_logits_for_metrics`), so evaluating 41,000 validation windows holds integers rather than 17 floats per token.
+- Every run writes `training_run.json` next to the model with the preset, base model revision, dataset revision, seed, device, platform, library versions, class weights, training time, and validation metrics.
+
 ## Evaluation statistics
 
 Per-type precision, recall, and F1 each get a 95% bootstrap confidence interval. Resampling is over test snippets, not spans, because spans in one snippet are not independent. The seed and the number of resamples are named constants, so a rerun reproduces the same interval. With about 200 snippets and 40 instances per type, a single F1 number would hide a wide interval.
