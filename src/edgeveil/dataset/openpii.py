@@ -26,8 +26,44 @@ ADDRESS_PARTS = frozenset({"STREET", "BUILDINGNUM", "CITY", "ZIPCODE"})
 ADDRESS_ANCHORS = frozenset({"STREET", "BUILDINGNUM", "ZIPCODE"})
 IGNORED_LABELS = frozenset({"DATE", "AGE", "GENDER", "SEX", "TITLE"})
 
-PERSON_GAP = re.compile(r"\s*")
-ADDRESS_GAP = re.compile(r"[\s,.#]*(?:(?<=[\s,.#])[A-Z]{2}[\s,.#]+)?")
+MAX_ADDRESS_GAP_LENGTH = 16
+ADDRESS_UNIT_WORDS = (
+    "apartment",
+    "suite",
+    "floor",
+    "level",
+    "block",
+    "flat",
+    "unit",
+    "room",
+    "bldg",
+    "apt",
+    "ste",
+    "blk",
+    "fl",
+    "rm",
+    "no",
+)
+NAME_PARTICLES = ("binti", "bin", "van", "von", "del", "de", "da", "la", "le", "al")
+PARENTAGE_MARKERS = ("s/o", "d/o")
+
+
+def alternation(words: Iterable[str]) -> str:
+    return "|".join(re.escape(word) for word in words)
+
+
+ADDRESS_SEPARATOR = r"[\s,.#\-\u2013\u2014]"
+ADDRESS_WORD = rf"(?:(?i:{alternation(ADDRESS_UNIT_WORDS)})|[A-Z]{{2}})"
+ADDRESS_GAP = re.compile(
+    rf"{ADDRESS_SEPARATOR}*"
+    rf"|{ADDRESS_SEPARATOR}+{ADDRESS_WORD}(?:{ADDRESS_SEPARATOR}+{ADDRESS_WORD})*"
+    rf"{ADDRESS_SEPARATOR}*"
+)
+MIDDLE_INITIAL = r"[A-Z]\.?"
+NAME_CONNECTOR = (
+    rf"(?:{MIDDLE_INITIAL}|{alternation(NAME_PARTICLES + PARENTAGE_MARKERS)})"
+)
+PERSON_GAP = re.compile(rf"\s*|\s+(?:{NAME_CONNECTOR}\s+)+")
 
 
 class DatasetError(Exception):
@@ -123,8 +159,19 @@ def can_merge(text: str, left: RawEntity, right: RawEntity) -> bool:
     if kind is None or kind is not part_kind(right.label):
         return False
     gap = text[left.end : right.start]
-    pattern = PERSON_GAP if kind is PartKind.PERSON else ADDRESS_GAP
-    return pattern.fullmatch(gap) is not None
+    if kind is PartKind.PERSON:
+        return is_person_gap(gap)
+    return is_address_gap(gap)
+
+
+def is_person_gap(gap: str) -> bool:
+    return PERSON_GAP.fullmatch(gap) is not None
+
+
+def is_address_gap(gap: str) -> bool:
+    if len(gap) > MAX_ADDRESS_GAP_LENGTH:
+        return False
+    return ADDRESS_GAP.fullmatch(gap) is not None
 
 
 def group_mergeable_parts(

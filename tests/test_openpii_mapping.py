@@ -7,6 +7,7 @@ from hypothesis import strategies as st
 from edgeveil.dataset.openpii import (
     DIRECT_LABELS,
     IGNORED_LABELS,
+    MAX_ADDRESS_GAP_LENGTH,
     OverlappingEntitiesError,
     RawEntity,
     UnknownLabelError,
@@ -54,6 +55,41 @@ def test_person_parts_merge_across_any_whitespace() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "gap",
+    [
+        " B ",
+        " B. ",
+        " van ",
+        " von ",
+        " de ",
+        " da ",
+        " del ",
+        " la ",
+        " le ",
+        " bin ",
+        " binti ",
+        " al ",
+        " de la ",
+        " s/o ",
+        " d/o ",
+        " B. van ",
+    ],
+)
+def test_person_parts_merge_across_initials_and_particles(gap: str) -> None:
+    assert mapped(("GIVENNAME", "Ada"), gap, ("SURNAME", "Quill")) == [
+        (f"Ada{gap}Quill", EntityType.PERSON)
+    ]
+
+
+@pytest.mark.parametrize(
+    "gap",
+    [" BB ", " b. ", " Van ", " der ", " and ", " s/oQ", " B., ", ", B. ", " van, "],
+)
+def test_person_parts_do_not_merge_across_other_text(gap: str) -> None:
+    assert len(mapped(("GIVENNAME", "Ada"), gap, ("SURNAME", "Quill"))) == 2
+
+
 def test_person_parts_never_merge_across_comma() -> None:
     assert mapped(("SURNAME", "Quill"), ", ", ("GIVENNAME", "Ada")) == [
         ("Quill", EntityType.PERSON),
@@ -86,14 +122,64 @@ def test_full_address_with_region_code_becomes_one_span() -> None:
     ) == [("12 Imaginary Lane, Nowhere City, ZZ 00000", EntityType.ADDRESS)]
 
 
-@pytest.mark.parametrize("separator", [" ", ", ", ". ", " #", "\n", ",\n"])
+@pytest.mark.parametrize(
+    "separator",
+    [" ", ", ", ". ", " #", "\n", ",\n", "-", " - ", "\u2013", " \u2013 ", " \u2014 "],
+)
 def test_address_parts_merge_across_separators(separator: str) -> None:
     assert mapped(("STREET", "Imaginary Lane"), separator, ("BUILDINGNUM", "4")) == [
         (f"Imaginary Lane{separator}4", EntityType.ADDRESS)
     ]
 
 
-@pytest.mark.parametrize("gap", [", zz ", ", ZZZ ", "ZZ ", " near ", " - "])
+@pytest.mark.parametrize(
+    "gap",
+    [
+        " Apt. ",
+        " apartment ",
+        " Suite ",
+        ", Ste. ",
+        " UNIT ",
+        " Flat ",
+        " Floor ",
+        " Fl. ",
+        " Room ",
+        " Rm ",
+        " Bldg. ",
+        " Block ",
+        " Blk ",
+        " Level ",
+        " No. ",
+        " No.",
+        " Apt",
+        ", Apt. #",
+        " - Unit ",
+        ", Floor, Room ",
+    ],
+)
+def test_address_parts_merge_across_unit_words(gap: str) -> None:
+    assert mapped(("STREET", "Imaginary Lane"), gap, ("BUILDINGNUM", "4")) == [
+        (f"Imaginary Lane{gap}4", EntityType.ADDRESS)
+    ]
+
+
+def test_address_gap_longer_than_the_cap_does_not_merge() -> None:
+    gap = "," * (MAX_ADDRESS_GAP_LENGTH + 1)
+    assert mapped(("STREET", "Imaginary Lane"), gap, ("BUILDINGNUM", "4")) == [
+        ("Imaginary Lane", EntityType.ADDRESS),
+        ("4", EntityType.ADDRESS),
+    ]
+
+
+def test_address_gap_at_the_cap_merges() -> None:
+    gap = "," * MAX_ADDRESS_GAP_LENGTH
+    assert len(mapped(("STREET", "Imaginary Lane"), gap, ("BUILDINGNUM", "4"))) == 1
+
+
+@pytest.mark.parametrize(
+    "gap",
+    [", zz ", ", ZZZ ", "ZZ ", " near ", "Apt ", " Apts ", " Aptno ", " Penthouse "],
+)
 def test_address_parts_do_not_merge_across_other_text(gap: str) -> None:
     assert mapped(("STREET", "Imaginary Lane"), gap, ("ZIPCODE", "00000")) == [
         ("Imaginary Lane", EntityType.ADDRESS),
