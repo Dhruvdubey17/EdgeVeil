@@ -76,6 +76,29 @@ def augment(
         console.print(f"{split}: {share:.2%} of rows contain a CREDENTIAL span.")
 
 
+@data_app.command(help="Show the gaps that keep name or address parts from merging.")
+def gaps(
+    data_dir: DataDir = DEFAULT_DATA_DIR,
+    split: Annotated[str, typer.Option(help="Split to inspect.")] = "validation",
+    top: Annotated[int, typer.Option(help="Number of gaps to list per kind.")] = 20,
+) -> None:
+    from edgeveil.dataset.gaps import gap_report
+
+    report = gap_report(data_dir, split, top)
+    for kind, rows in report.top_split_gaps.items():
+        adjacent = report.adjacent_pairs.get(kind, 0)
+        split_count = report.split_pairs[kind]
+        console.print(
+            f"{kind}: {split_count:,} of {adjacent:,} adjacent pairs still split"
+        )
+        table = Table(title=f"Top split gaps ({kind}, {split})")
+        for column in ("Count", "Left", "Right", "Gap"):
+            table.add_column(column)
+        for left, right, gap, count in rows:
+            table.add_row(f"{count:,}", left, right, gap)
+        console.print(table)
+
+
 def report_rows(report: "PreparationReport") -> dict[str, int]:
     rows: dict[str, int] = {}
     for split, count in report.raw_rows.items():
