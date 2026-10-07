@@ -5,6 +5,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from edgeveil.dataset.credentials import AUGMENTATION_SEED
+
 if TYPE_CHECKING:
     from edgeveil.dataset.prepare import PreparationReport
 
@@ -46,6 +48,26 @@ def prepare(data_dir: DataDir = DEFAULT_DATA_DIR) -> None:
         tables[f"Spans by type ({split})"] = counts
     for title, counts in tables.items():
         console.print(count_table(title, counts))
+
+
+@data_app.command(
+    help="Add seeded synthetic credentials and hard negatives under data/."
+)
+def augment(
+    data_dir: DataDir = DEFAULT_DATA_DIR,
+    seed: Annotated[
+        int, typer.Option(help="Seed for the generator.")
+    ] = AUGMENTATION_SEED,
+) -> None:
+    from edgeveil.dataset.augment import augment_openpii
+
+    report = augment_openpii(data_dir, seed)
+    console.print(f"Seed {report.seed}.")
+    for split, counts in report.rows_by_origin.items():
+        console.print(count_table(f"Rows by origin ({split})", counts))
+    console.print(count_table("CREDENTIAL spans", report.credential_spans))
+    for split, share in report.credential_row_share.items():
+        console.print(f"{split}: {share:.2%} of rows contain a CREDENTIAL span.")
 
 
 def report_rows(report: "PreparationReport") -> dict[str, int]:
