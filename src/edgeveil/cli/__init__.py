@@ -11,6 +11,7 @@ from edgeveil.detector.presets import ModelPreset
 NOT_IMPLEMENTED_EXIT_CODE = 1
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MODELS_DIR = Path("models")
+DEFAULT_LOGGING_STEPS = 100
 DEFAULT_PROXY_PORT = 8787
 
 app = typer.Typer(
@@ -93,10 +94,23 @@ def train(
     max_steps: Annotated[
         int | None, typer.Option(help="Stop after this many steps, for smoke runs.")
     ] = None,
+    logging_steps: Annotated[
+        int, typer.Option(help="Log the training loss every this many steps.")
+    ] = DEFAULT_LOGGING_STEPS,
+    resume: Annotated[
+        bool,
+        typer.Option(help="Continue from the last checkpoint in the models directory."),
+    ] = False,
 ) -> None:
-    from edgeveil.detector.training import train_detector
+    from edgeveil.detector.training import RunOptions, train_detector
 
-    record = train_detector(data_dir, models_dir, preset, max_steps)
+    options = RunOptions(
+        output_dir=models_dir / preset.value / "checkpoints",
+        max_steps=max_steps,
+        logging_steps=logging_steps,
+        resume=resume,
+    )
+    record = train_detector(data_dir, models_dir, preset, options)
     seconds = record.training_seconds
     output_console.print(
         f"Trained {record.base_model} in {seconds:.0f} s on {record.device}."

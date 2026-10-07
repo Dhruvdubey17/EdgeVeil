@@ -30,6 +30,7 @@ from edgeveil.detector.training import (
     class_weights,
     encode_training_batch,
     entity_metrics,
+    planned_steps,
     weighted_token_loss,
 )
 from edgeveil.detector.windows import encode_windows
@@ -130,3 +131,19 @@ def test_two_training_steps_run_and_save_a_token_classifier(
     trainer.save_model(str(tmp_path / "model"))
     saved = json.loads((tmp_path / "model" / "config.json").read_text())
     assert saved["id2label"]["0"] == "O"
+
+
+def test_entity_metrics_use_strict_iob2_so_an_orphan_inside_tag_is_wrong() -> None:
+    gold = [
+        [IGNORED_LABEL_ID, LABEL_TO_ID["O"], LABEL_TO_ID["B-PERSON"], IGNORED_LABEL_ID]
+    ]
+    predicted = [[0, LABEL_TO_ID["O"], LABEL_TO_ID["I-PERSON"], 0]]
+    metrics = entity_metrics(
+        EvalPrediction(predictions=np.array(predicted), label_ids=np.array(gold))
+    )
+    assert metrics["PERSON_recall"] == pytest.approx(0.0)
+
+
+def test_planned_steps_round_each_epoch_up() -> None:
+    config = PRESETS[ModelPreset.DISTILBERT]
+    assert planned_steps(config.batch_size + 1, config) == 2 * config.epochs

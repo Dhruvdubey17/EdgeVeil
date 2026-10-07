@@ -13,6 +13,7 @@ import transformers
 from datasets import Dataset
 from seqeval.metrics import classification_report
 from seqeval.metrics.v1 import UndefinedMetricWarning
+from seqeval.scheme import IOB2
 from torch.nn import functional
 from transformers import (
     AutoModelForTokenClassification,
@@ -22,6 +23,9 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizerBase,
     Trainer,
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
     TrainingArguments,
     set_seed,
 )
@@ -44,8 +48,11 @@ GRADIENT_ACCUMULATION_STEPS = 1
 CLASS_WEIGHT_POWER = 0.5
 MAX_CLASS_WEIGHT = 10.0
 EVAL_BATCH_SIZE = 64
-LOGGING_STEPS = 200
-CHECKPOINTS_KEPT = 1
+DEFAULT_LOGGING_STEPS = 100
+CHECKPOINTS_KEPT = 2
+LENGTH_COLUMN = "length"
+SAMPLING_STRATEGY = "group_by_length"
+SEQEVAL_MODE = "strict"
 RUN_RECORD_NAME = "training_run.json"
 OVERALL_METRICS_KEY = "micro avg"
 
@@ -61,6 +68,8 @@ class RunOptions:
     output_dir: Path
     max_steps: int | None = None
     use_cpu: bool = False
+    logging_steps: int = DEFAULT_LOGGING_STEPS
+    resume: bool = False
 
 
 def spans_from_records(records: Iterable[Mapping[str, Any]]) -> list[GoldSpan]:
@@ -72,22 +81,23 @@ def spans_from_records(records: Iterable[Mapping[str, Any]]) -> list[GoldSpan]:
 
 def encode_training_batch(
     batch: Mapping[str, list[Any]], tokenizer: PreTrainedTokenizerBase
-) -> dict[str, list[list[int]]]:
+) -> dict[str, list[Any]]:
     texts: list[str] = batch["source_text"]
-    encoded: dict[str, list[list[int]]] = {
-        "input_ids": [],
-        "attention_mask": [],
-        "labels": [],
-    }
+    input_ids: list[list[int]] = []
+    labels: list[list[int]] = []
     for windows, span_records in zip(
         encode_windows(tokenizer, texts), batch["spans"], strict=True
     ):
         spans = spans_from_records(span_records)
         for window in windows:
-            encoded["input_ids"].append(window.input_ids)
-            encoded["attention_mask"].append([1] * len(window.input_ids))
-            encoded["labels"].append(token_label_ids(spans, window.offsets))
-    return encoded
+            input_ids.append(window.input_ids)
+            labels.append(token_label_ids(spans, window.offsets))
+    return {
+        "input_ids": input_ids,
+        "attention_mask": [[1] * len(ids) for ids in input_ids],
+        "labels": labels,
+        LENGTH_COLUMN: [len(ids) for ids in input_ids],
+    }
 
 
 def windowed_split(
@@ -154,7 +164,9 @@ def entity_metrics(evaluation: EvalPrediction) -> dict[str, float]:
         warnings.simplefilter("ignore", UndefinedMetricWarning)
         report = cast(
             dict[str, dict[str, float]],
-            classification_report(gold, predicted, output_dict=True),
+            classification_report(
+                gold, predicted, output_dict=True, mode=SEQEVAL_MODE, scheme=IOB2
+            ),
         )
     metrics: dict[str, float] = {}
     for entity in [*(entity.value for entity in EntityType), OVERALL_METRICS_KEY]:
@@ -183,7 +195,10 @@ def training_arguments(
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=CHECKPOINTS_KEPT,
-        logging_steps=LOGGING_STEPS,
+        logging_steps=options.logging_steps,
+        train_sampling_strategy=SAMPLING_STRATEGY,
+        length_column_name=LENGTH_COLUMN,
+        disable_tqdm=True,
         seed=TRAINING_SEED,
         data_seed=TRAINING_SEED,
         dataloader_pin_memory=False,
@@ -229,6 +244,50 @@ def load_base_model(
     return model, tokenizer
 
 
+class StepTimer(TrainerCallback):
+    def __init__(self) -> None:
+        self.first_step: tuple[int, float] | None = None
+        self.last_step: tuple[int, float] | None = None
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs: Any,
+    ) -> None:
+        now = (state.global_step, time.perf_counter())
+        if self.first_step is None:
+            self.first_step = now
+        self.last_step = now
+
+    def steps_per_second(self) -> float | None:
+        if self.first_step is None or self.last_step is None:
+            return None
+        steps = self.last_step[0] - self.first_step[0]
+        seconds = self.last_step[1] - self.first_step[1]
+        return steps / seconds if seconds > 0 else None
+
+
+def loss_history(state: TrainerState) -> list[tuple[int, float]]:
+    return [
+        (int(entry["step"]), float(entry["loss"]))
+        for entry in state.log_history
+        if "loss" in entry
+    ]
+
+
+def last_evaluation(trainer: Trainer) -> dict[str, float]:
+    evaluations = [entry for entry in trainer.state.log_history if "eval_loss" in entry]
+    if evaluations:
+        return evaluations[-1]
+    return trainer.evaluate()
+
+
+def planned_steps(train_windows: int, config: TrainingConfig) -> int:
+    return config.epochs * -(-train_windows // config.batch_size)
+
+
 @dataclass(frozen=True, slots=True)
 class TrainingRecord:
     preset: str
@@ -243,27 +302,37 @@ class TrainingRecord:
     transformers_version: str
     train_windows: int
     validation_windows: int
+    planned_steps: int
+    completed_steps: int
     class_weights: list[float]
     training_seconds: float
+    train_steps_per_second: float | None
+    loss_history: list[tuple[int, float]]
     validation_metrics: dict[str, float]
 
 
 def train_detector(
-    data_dir: Path, models_dir: Path, preset: ModelPreset, max_steps: int | None = None
+    data_dir: Path,
+    models_dir: Path,
+    preset: ModelPreset,
+    options: RunOptions | None = None,
 ) -> TrainingRecord:
     config = PRESETS[preset]
+    output_dir = models_dir / preset.value
+    run_options = options or RunOptions(output_dir=output_dir / "checkpoints")
     model, tokenizer = load_base_model(config)
     datasets = SplitDatasets(
         train=windowed_split(data_dir, "train", tokenizer),
         validation=windowed_split(data_dir, "validation", tokenizer),
     )
-    output_dir = models_dir / preset.value
-    options = RunOptions(output_dir=output_dir / "checkpoints", max_steps=max_steps)
-    trainer = build_trainer(model, tokenizer, datasets, config, options)
+    trainer = build_trainer(model, tokenizer, datasets, config, run_options)
+    timer = StepTimer()
+    trainer.add_callback(timer)
     started = time.perf_counter()
-    trainer.train()
+    trainer.train(resume_from_checkpoint=run_options.resume or None)
     elapsed = time.perf_counter() - started
     trainer.save_model(str(output_dir))
+    weights = class_weights(datasets.train["labels"])
     record = TrainingRecord(
         preset=preset.value,
         base_model=config.base_model,
@@ -277,9 +346,13 @@ def train_detector(
         transformers_version=transformers.__version__,
         train_windows=len(datasets.train),
         validation_windows=len(datasets.validation),
-        class_weights=class_weights(datasets.train["labels"]),
+        planned_steps=planned_steps(len(datasets.train), config),
+        completed_steps=trainer.state.global_step,
+        class_weights=weights,
         training_seconds=round(elapsed, 1),
-        validation_metrics=trainer.evaluate(),
+        train_steps_per_second=timer.steps_per_second(),
+        loss_history=loss_history(trainer.state),
+        validation_metrics=last_evaluation(trainer),
     )
     (output_dir / RUN_RECORD_NAME).write_text(json.dumps(asdict(record), indent=2))
     return record
