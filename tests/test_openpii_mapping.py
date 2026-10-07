@@ -311,6 +311,37 @@ def test_trimmed_person_parts_still_merge() -> None:
     ]
 
 
+NON_BREAKING_SPACES = ["\N{NO-BREAK SPACE}", "\N{NARROW NO-BREAK SPACE}"]
+
+
+@pytest.mark.parametrize("space", NON_BREAKING_SPACES)
+def test_non_breaking_spaces_join_person_parts(space: str) -> None:
+    assert mapped(("GIVENNAME", "Ada"), space, ("SURNAME", "Quill")) == [
+        (f"Ada{space}Quill", EntityType.PERSON)
+    ]
+
+
+@pytest.mark.parametrize("space", NON_BREAKING_SPACES)
+def test_non_breaking_spaces_surround_name_connectors(space: str) -> None:
+    gap = f"{space}B.{space}"
+    assert len(mapped(("GIVENNAME", "Ada"), gap, ("SURNAME", "Quill"))) == 1
+
+
+@pytest.mark.parametrize("space", NON_BREAKING_SPACES)
+def test_non_breaking_spaces_join_address_parts(space: str) -> None:
+    gap = f",{space}Apt.{space}"
+    assert mapped(("STREET", "Imaginary Lane"), gap, ("BUILDINGNUM", "4")) == [
+        (f"Imaginary Lane{gap}4", EntityType.ADDRESS)
+    ]
+
+
+@pytest.mark.parametrize("space", NON_BREAKING_SPACES)
+def test_non_breaking_spaces_are_trimmed_from_entity_edges(space: str) -> None:
+    assert mapped("Call ", ("TELEPHONENUM", f"{space}555-0100{space}"), "now") == [
+        ("555-0100", EntityType.PHONE)
+    ]
+
+
 def joints(*parts: Part) -> list[str]:
     text, entities = compose(*parts)
     return [text[start:end] for start, end in name_joints(text, entities)]
