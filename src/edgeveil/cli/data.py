@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from edgeveil.dataset.prepare import PreparationReport
 
 DEFAULT_DATA_DIR = Path("data")
+DEFAULT_TEST_SET_PATH = DEFAULT_DATA_DIR / "test" / "test_set.jsonl"
+LABELING_ISSUES_EXIT_CODE = 1
 
 data_app = typer.Typer(help="Download and prepare training data.", no_args_is_help=True)
 console = Console()
@@ -97,6 +99,33 @@ def gaps(
         for left, right, gap, count in rows:
             table.add_row(f"{count:,}", left, right, gap)
         console.print(table)
+
+
+@data_app.command(
+    name="import-labels",
+    help="Convert a Label Studio JSON export into the hand-labeled test set.",
+)
+def import_labels(
+    export_path: Annotated[Path, typer.Argument(help="Label Studio JSON export file.")],
+    output: Annotated[
+        Path, typer.Option(help="Where to write the test set JSONL.")
+    ] = DEFAULT_TEST_SET_PATH,
+) -> None:
+    from edgeveil.evaluation.label_studio import import_label_studio_export
+
+    issues = import_label_studio_export(export_path, output)
+    if not issues:
+        console.print(f"Wrote the test set to {output}.")
+        return
+    table = Table(title="Labeling issues (nothing written)")
+    for column in ("Task", "Start", "End", "Problem"):
+        table.add_column(column)
+    for issue in issues:
+        table.add_row(
+            str(issue.task_id), str(issue.start), str(issue.end), issue.problem
+        )
+    console.print(table)
+    raise typer.Exit(code=LABELING_ISSUES_EXIT_CODE)
 
 
 def report_rows(report: "PreparationReport") -> dict[str, int]:
