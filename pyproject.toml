@@ -23,6 +23,7 @@ edgeveil = "edgeveil.cli:app"
 
 [project.optional-dependencies]
 train = [
+    "accelerate>=1.15.0",
     "datasets>=5.1.0",
     "seqeval>=1.2.2",
     "torch>=2.14.1",
