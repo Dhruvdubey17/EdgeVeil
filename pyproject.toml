@@ -69,6 +69,7 @@ strict = [
     "src/edgeveil/__init__.py",
     "src/edgeveil/spans.py",
     "src/edgeveil/dataset/openpii.py",
+    "src/edgeveil/dataset/credentials.py",
     "src/edgeveil/masker",
     "src/edgeveil/validators",
     "src/edgeveil/proxy",
