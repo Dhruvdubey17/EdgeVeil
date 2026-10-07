@@ -13,9 +13,14 @@ class TrainingConfig:
     revision: str
     learning_rate: float = 5e-5
     epochs: int = 2
-    batch_size: int = 32
+    device_batch_size: int = 16
+    gradient_accumulation_steps: int = 2
     warmup_share: float = 0.06
     weight_decay: float = 0.01
+
+    @property
+    def effective_batch_size(self) -> int:
+        return self.device_batch_size * self.gradient_accumulation_steps
 
 
 PRESETS = {

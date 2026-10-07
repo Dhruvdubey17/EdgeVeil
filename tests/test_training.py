@@ -126,6 +126,7 @@ def test_two_training_steps_run_and_save_a_token_classifier(
         PRESETS[ModelPreset.DISTILBERT],
         RunOptions(output_dir=tmp_path / "run", max_steps=2, use_cpu=True),
     )
+    assert trainer.loss_is_scaled_for_ga is False
     result = trainer.train()
     assert math.isfinite(result.training_loss)
     trainer.save_model(str(tmp_path / "model"))
@@ -146,4 +147,4 @@ def test_entity_metrics_use_strict_iob2_so_an_orphan_inside_tag_is_wrong() -> No
 
 def test_planned_steps_round_each_epoch_up() -> None:
     config = PRESETS[ModelPreset.DISTILBERT]
-    assert planned_steps(config.batch_size + 1, config) == 2 * config.epochs
+    assert planned_steps(config.effective_batch_size + 1, config) == 2 * config.epochs

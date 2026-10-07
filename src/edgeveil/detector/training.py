@@ -1,19 +1,13 @@
 import json
-import platform
 import time
-import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import torch
-import transformers
 from datasets import Dataset
-from seqeval.metrics import classification_report
-from seqeval.metrics.v1 import UndefinedMetricWarning
-from seqeval.scheme import IOB2
 from torch.nn import functional
 from transformers import (
     AutoModelForTokenClassification,
@@ -30,6 +24,7 @@ from transformers import (
     set_seed,
 )
 
+from edgeveil.bench.environment import environment_record
 from edgeveil.dataset.augment import openpii_augmented_dir
 from edgeveil.dataset.openpii import OPENPII_REVISION
 from edgeveil.detector.alignment import token_label_ids
@@ -39,22 +34,20 @@ from edgeveil.detector.labels import (
     IGNORED_LABEL_ID,
     LABEL_TO_ID,
 )
+from edgeveil.detector.metrics import OVERALL_REPORT_KEY, strict_entity_scores
 from edgeveil.detector.presets import PRESETS, ModelPreset, TrainingConfig
 from edgeveil.detector.windows import encode_windows
 from edgeveil.spans import EntityType, GoldSpan
 
 TRAINING_SEED = 1006
-GRADIENT_ACCUMULATION_STEPS = 1
 CLASS_WEIGHT_POWER = 0.5
 MAX_CLASS_WEIGHT = 10.0
-EVAL_BATCH_SIZE = 64
+EVAL_BATCH_SIZE = 32
 DEFAULT_LOGGING_STEPS = 100
 CHECKPOINTS_KEPT = 2
 LENGTH_COLUMN = "length"
 SAMPLING_STRATEGY = "group_by_length"
-SEQEVAL_MODE = "strict"
 RUN_RECORD_NAME = "training_run.json"
-OVERALL_METRICS_KEY = "micro avg"
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,22 +153,12 @@ def label_sequences(
 
 def entity_metrics(evaluation: EvalPrediction) -> dict[str, float]:
     gold, predicted = label_sequences(evaluation.predictions, evaluation.label_ids)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UndefinedMetricWarning)
-        report = cast(
-            dict[str, dict[str, float]],
-            classification_report(
-                gold, predicted, output_dict=True, mode=SEQEVAL_MODE, scheme=IOB2
-            ),
-        )
     metrics: dict[str, float] = {}
-    for entity in [*(entity.value for entity in EntityType), OVERALL_METRICS_KEY]:
-        scores = report.get(entity)
-        if scores is None:
-            continue
-        name = "overall" if entity == OVERALL_METRICS_KEY else entity
-        for measure in ("precision", "recall", "f1-score"):
-            metrics[f"{name}_{measure.removesuffix('-score')}"] = float(scores[measure])
+    for name, scores in strict_entity_scores(gold, predicted).items():
+        prefix = "overall" if name == OVERALL_REPORT_KEY else name
+        metrics[f"{prefix}_precision"] = scores.precision
+        metrics[f"{prefix}_recall"] = scores.recall
+        metrics[f"{prefix}_f1"] = scores.f1
     return metrics
 
 
@@ -187,9 +170,9 @@ def training_arguments(
         learning_rate=config.learning_rate,
         num_train_epochs=config.epochs,
         max_steps=options.max_steps or -1,
-        per_device_train_batch_size=config.batch_size,
+        per_device_train_batch_size=config.device_batch_size,
         per_device_eval_batch_size=EVAL_BATCH_SIZE,
-        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
+        gradient_accumulation_steps=config.gradient_accumulation_steps,
         warmup_steps=config.warmup_share,
         weight_decay=config.weight_decay,
         eval_strategy="epoch",
@@ -214,7 +197,7 @@ def build_trainer(
     config: TrainingConfig,
     options: RunOptions,
 ) -> Trainer:
-    return Trainer(
+    trainer = Trainer(
         model=model,
         args=training_arguments(config, options),
         train_dataset=datasets.train,
@@ -225,6 +208,8 @@ def build_trainer(
         compute_metrics=entity_metrics,
         preprocess_logits_for_metrics=most_likely_labels,
     )
+    trainer.loss_is_scaled_for_ga = False
+    return trainer
 
 
 def load_base_model(
@@ -285,7 +270,7 @@ def last_evaluation(trainer: Trainer) -> dict[str, float]:
 
 
 def planned_steps(train_windows: int, config: TrainingConfig) -> int:
-    return config.epochs * -(-train_windows // config.batch_size)
+    return config.epochs * -(-train_windows // config.effective_batch_size)
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,9 +282,7 @@ class TrainingRecord:
     training_seed: int
     config: dict[str, Any]
     device: str
-    platform: str
-    torch_version: str
-    transformers_version: str
+    environment: dict[str, Any]
     train_windows: int
     validation_windows: int
     planned_steps: int
@@ -341,9 +324,7 @@ def train_detector(
         training_seed=TRAINING_SEED,
         config=asdict(config),
         device=str(trainer.args.device),
-        platform=platform.platform(),
-        torch_version=torch.__version__,
-        transformers_version=transformers.__version__,
+        environment=environment_record(),
         train_windows=len(datasets.train),
         validation_windows=len(datasets.validation),
         planned_steps=planned_steps(len(datasets.train), config),
