@@ -55,6 +55,18 @@ The mapping lives in `edgeveil.dataset.openpii`, and `docs/labeling.md` states t
 - Effect of widening the gap rules, measured with `edgeveil data prepare` on 2026-10-06. ADDRESS spans went from 101,146 to 94,972 in train and from 25,130 to 23,562 in validation, because pieces that used to be split now merge. PERSON spans did not change (161,229 train, 40,368 validation): no GIVENNAME and SURNAME pair in the data is separated by an initial or particle. After the change, 2,566 of 31,254 adjacent name-part pairs and 9,581 of 39,239 adjacent address-part pairs in validation still split. The most common address splits are words such as ` in ` and ZIP-code phrases such as ` (ZIP `. Most name splits are separate people joined by ` and `, commas, or form labels such as `Last Name: `.
 - DATE, AGE, GENDER, SEX, and TITLE map to O. They are quasi-identifiers, outside the v1 entity set.
 
+## Name connectors
+
+Widening the PERSON gap rule changed no training span, because no OpenPII row has an initial or particle between a given name and a surname. The test set will have them, so `edgeveil data augment` adds them. `prepare` records each whitespace gap between a GIVENNAME and the SURNAME that follows it (`name_joints` in the clean parquet), and `augment` replaces about 3% of those gaps (`NAME_CONNECTOR_PAIR_FRACTION`) with `gap + connector + gap`, half capital initials and half listed particles. The surrounding PERSON span grows by the inserted length and later spans shift. This runs before credential insertion, because the joint offsets refer to the clean text. On the 2026-10-06 run, 3,443 of 114,781 train pairs and 860 of 28,651 validation pairs got a connector.
+
+## Gap report
+
+`edgeveil data gaps` lists the gaps that keep adjacent name or address parts from merging. Gaps longer than `MAX_ADDRESS_GAP_LENGTH` (16) are shown as one bucket. For addresses that is the merge limit, so any longer gap splits by length alone. Person gaps have no length limit, and the same bucket is used there only to keep long stretches of text out of the report.
+
+## Whitespace characters
+
+U+00A0 (no-break space) and U+202F (narrow no-break space) count as whitespace everywhere: `str.isspace` and `str.strip` treat them as whitespace, and `\s` in Python's `re` matches them in str patterns. OpenPII uses U+202F between address parts (for example 243 CITY to ZIPCODE gaps in validation). Tests pin this for gap matching and edge trimming. The validators do not exist yet; their tests will cover the same characters.
+
 ## Evaluation statistics
 
 Per-type precision, recall, and F1 each get a 95% bootstrap confidence interval. Resampling is over test snippets, not spans, because spans in one snippet are not independent. The seed and the number of resamples are named constants, so a rerun reproduces the same interval. With about 200 snippets and 40 instances per type, a single F1 number would hide a wide interval.
@@ -68,6 +80,7 @@ OpenPII has no password, key, or token labels, so CREDENTIAL training data is sy
 - Provider key formats are assembled at runtime from parts, and no literal in a real provider format is stored in the repo, because GitHub secret scanning flags such strings.
 - Rates, set as constants in `edgeveil.dataset.credentials`: `CREDENTIAL_ROW_FRACTION = 0.04` of rows end up holding a credential. A quarter of those (`STANDALONE_CONTEXT_SHARE`) are standalone templated rows (a `.env` file, a curl command, JSON and YAML config, client code), and the rest are OpenPII rows with a credential sentence inserted. `HARD_NEGATIVE_ROW_FRACTION = 0.02` of OpenPII rows get a hard-negative sentence. On the 2026-10-06 run this gave 3.96% of rows with a CREDENTIAL span in each split, 7,054 CREDENTIAL spans in train and 1,760 in validation.
 - Validation is augmented too, with its own random stream (`seed:split`). Per-type thresholds are tuned on validation, and without credentials there the CREDENTIAL threshold could not be tuned. The test set stays hand-written, so the generator never touches it.
+- Train and validation draw from disjoint template sets (`TRAIN_TEMPLATES`, `VALIDATION_TEMPLATES`) for credential sentences, standalone contexts, and hard negatives, so validation measures generalization to contexts the model has not seen. The secret generators and key shapes are shared, so validation does not test unseen key formats. CREDENTIAL validation scores are still scores on synthetic data. Only the hand-written test set measures real-looking credentials.
 - Insertions go at the start, the end, or after a sentence boundary (`.`, `!`, or `?` followed by whitespace, or a newline), never inside an existing span. Spans after the insertion point shift by the inserted length.
 - A CREDENTIAL span covers only the secret. Field names, quotes, and the `Bearer` scheme word stay outside, matching `docs/labeling.md`.
 - `edgeveil data augment` refuses an output path with no `data` directory in it. The `data/` pattern in `.gitignore` matches a directory of that name at any depth, so this keeps generated provider-shaped keys out of anything that could be committed.

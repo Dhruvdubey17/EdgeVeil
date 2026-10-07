@@ -10,13 +10,15 @@ Label in Label Studio with `docs/label_studio.xml`. Select character spans.
 - Spans never overlap or nest.
 - Label every occurrence, including repeats of the same value.
 - Do not label dates, ages, gender, sex, or titles. They are outside the entity set.
+- Field labels and label words never go inside a span: `ZIP`, `postal code`, `postcode`, `Last Name:`, `Surname:`, and the like.
 
 ## PERSON
 
 - A person's given name, surname, or both. A given name or surname on its own is PERSON.
 - Name parts form one span when the text between them is whitespace, optionally with connectors that each have whitespace on both sides. The connectors are a middle initial (one capital letter, with or without a period), the lowercase particles `van`, `von`, `de`, `da`, `del`, `la`, `le`, `bin`, `binti`, and `al`, and `s/o` or `d/o`. So `Ada Quill`, `Ada B. Quill`, `Ada van Quill`, and `Ada s/o Quill` are each one span.
 - Any other word between parts splits the name: in `Ada der Quill` or `Ada Van Quill`, label `Ada` and `Quill` separately.
-- A comma always splits: `Quill, Ada` is two PERSON spans, `Quill` and `Ada`.
+- A comma always splits, because name parts never merge across a comma: `Smith, John` is two PERSON spans, `Smith` and `John`.
+- A form label between parts splits them: in `First Name: Ada` followed by `Last Name: Quill` on the next line, label `Ada` and `Quill` separately.
 - Titles and honorifics stay outside the span: in `Dr. Ada Quill`, label `Ada Quill`.
 - A possessive suffix stays outside: in `Ada's`, label `Ada`.
 - Usernames and handles are not PERSON.
@@ -30,7 +32,10 @@ Label in Label Studio with `docs/label_studio.xml`. Select character spans.
   - Each allowed word has a separator before it. The last one may touch the next part, as in `Apt4`.
   - Examples of one span: `12 Imaginary Lane, Nowhere City, ZZ 00000`, `Imaginary Lane Apt. 4`, `Nowhere City – 00000`.
 - A span is ADDRESS only if it contains a street, a building number, or a ZIP code. A city on its own, or a city followed by a region code, is not labeled.
-- Any other text between parts ends the span. In `12 Imaginary Lane, Nowhere City, Colorado 00000`, the spelled-out state ends the span, so the labels are `12 Imaginary Lane, Nowhere City` and `00000`. The same holds for words like `in`, `ZIP`, or `postcode`: `Nowhere City (ZIP 00000)` gives only `00000`.
+- Any other text between parts ends the span. In `12 Imaginary Lane, Nowhere City, Colorado 00000`, the spelled-out state ends the span, so the labels are `12 Imaginary Lane, Nowhere City` and `00000`.
+- A city joined to the rest of an address only through a label phrase (`ZIP`, `postal code`, `postcode`) or through ` in ` counts as a lone city and is not labeled. Two examples:
+  - `12 Imaginary Lane in Nowhere City`: label `12 Imaginary Lane` only.
+  - `Nowhere City (ZIP 00000)`: label `00000` only.
 - A region code after the last part stays outside: in `12 Imaginary Lane, Nowhere City, ZZ`, label `12 Imaginary Lane, Nowhere City`.
 - Countries are not labeled.
 
