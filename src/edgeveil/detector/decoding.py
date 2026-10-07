@@ -1,0 +1,114 @@
+from collections.abc import Mapping, Sequence
+
+import numpy as np
+from numpy.typing import NDArray
+
+from edgeveil.detector.alignment import Offset, decode_label_ids, is_special_token
+from edgeveil.detector.labels import OUTSIDE_ID, begin_id, inside_id
+from edgeveil.detector.windows import Window
+from edgeveil.spans import EntityType, GoldSpan, Span, SpanSource
+
+Thresholds = Mapping[EntityType, float]
+DEFAULT_THRESHOLD = 0.5
+
+ENTITY_ORDER = tuple(EntityType)
+BEGIN_IDS = np.array([begin_id(entity) for entity in ENTITY_ORDER])
+INSIDE_IDS = np.array([inside_id(entity) for entity in ENTITY_ORDER])
+
+
+def uniform_thresholds(value: float = DEFAULT_THRESHOLD) -> dict[EntityType, float]:
+    return dict.fromkeys(ENTITY_ORDER, value)
+
+
+def softmax(logits: NDArray[np.floating]) -> NDArray[np.float64]:
+    shifted = logits - logits.max(axis=-1, keepdims=True)
+    exponentials = np.exp(shifted)
+    return exponentials / exponentials.sum(axis=-1, keepdims=True)
+
+
+def entity_masses(probabilities: NDArray[np.floating]) -> NDArray[np.float64]:
+    return probabilities[:, BEGIN_IDS] + probabilities[:, INSIDE_IDS]
+
+
+def thresholded_label_ids(
+    probabilities: NDArray[np.floating], thresholds: Thresholds
+) -> list[int]:
+    masses = entity_masses(probabilities)
+    rows = np.arange(len(probabilities))
+    best = masses.argmax(axis=1)
+    cutoffs = np.array([thresholds[entity] for entity in ENTITY_ORDER])
+    is_kept = masses[rows, best] >= cutoffs[best]
+    is_inside = (
+        probabilities[rows, INSIDE_IDS[best]] > probabilities[rows, BEGIN_IDS[best]]
+    )
+    entity_ids = np.where(is_inside, INSIDE_IDS[best], BEGIN_IDS[best])
+    return np.where(is_kept, entity_ids, OUTSIDE_ID).tolist()
+
+
+def tokens_inside(span: GoldSpan, offsets: Sequence[Offset]) -> list[int]:
+    return [
+        index
+        for index, offset in enumerate(offsets)
+        if not is_special_token(offset)
+        and span.start <= offset[0]
+        and offset[1] <= span.end
+    ]
+
+
+def window_spans(
+    probabilities: NDArray[np.floating],
+    offsets: Sequence[Offset],
+    thresholds: Thresholds,
+) -> list[Span]:
+    masses = entity_masses(probabilities)
+    spans: list[Span] = []
+    for decoded in decode_label_ids(
+        thresholded_label_ids(probabilities, thresholds), offsets
+    ):
+        column = ENTITY_ORDER.index(decoded.label)
+        score = float(masses[tokens_inside(decoded, offsets), column].mean())
+        spans.append(
+            Span(
+                decoded.start,
+                decoded.end,
+                decoded.label,
+                min(score, 1.0),
+                SpanSource.MODEL,
+            )
+        )
+    return spans
+
+
+def merged_pair(kept: Span, incoming: Span) -> Span:
+    if kept.label is incoming.label:
+        return Span(
+            kept.start,
+            max(kept.end, incoming.end),
+            kept.label,
+            max(kept.score, incoming.score),
+            SpanSource.MODEL,
+        )
+    return incoming if incoming.score > kept.score else kept
+
+
+def merge_window_spans(spans: Sequence[Span]) -> list[Span]:
+    merged: list[Span] = []
+    for incoming in sorted(spans, key=lambda span: (span.start, -span.score)):
+        if merged and merged[-1].overlaps(incoming):
+            merged[-1] = merged_pair(merged[-1], incoming)
+        else:
+            merged.append(incoming)
+    return merged
+
+
+def logits_to_spans(
+    window_logits: Sequence[NDArray[np.floating]],
+    windows: Sequence[Window],
+    thresholds: Thresholds,
+) -> list[Span]:
+    spans = [
+        span
+        for logits, window in zip(window_logits, windows, strict=True)
+        for span in window_spans(softmax(logits), window.offsets, thresholds)
+    ]
+    return merge_window_spans(spans)
