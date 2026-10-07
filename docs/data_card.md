@@ -11,6 +11,12 @@
 | Attribution | Ai4Privacy / Ai Suisse SA |
 | Content | Synthetic text with synthetic personal data, per the dataset card |
 
+### Provenance
+
+Each row's `source_dataset` field is either `base` or `asia-pacific`. The English `base` rows match the English part of [ai4privacy/pii-masking-openpii-1m](https://huggingface.co/datasets/ai4privacy/pii-masking-openpii-1m) in count, which fits the 1.5M card's statement that it extends OpenPII 1M. The `asia-pacific` rows add English text from Singapore and India. EdgeVeil downloads only the 1.5M dataset and does not combine it with a separate copy of 1M.
+
+### Changes
+
 The OpenPII 1.5M dataset by Ai4Privacy / Ai Suisse SA is used under CC-BY-4.0. EdgeVeil changes it as follows:
 
 - English filter. Only rows whose `language` field is `en` are kept, in both the train and validation splits.
