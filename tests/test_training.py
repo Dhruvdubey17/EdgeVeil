@@ -12,6 +12,7 @@ from transformers import (
     DistilBertForTokenClassification,
     EvalPrediction,
     PreTrainedTokenizerFast,
+    Trainer,
 )
 
 from edgeveil.detector.alignment import decode_label_ids
@@ -148,3 +149,29 @@ def test_entity_metrics_use_strict_iob2_so_an_orphan_inside_tag_is_wrong() -> No
 def test_planned_steps_round_each_epoch_up() -> None:
     config = PRESETS[ModelPreset.DISTILBERT]
     assert planned_steps(config.effective_batch_size + 1, config) == 2 * config.epochs
+
+
+def test_training_resumes_from_the_last_checkpoint(
+    tiny_tokenizer: PreTrainedTokenizerFast, tmp_path: Path
+) -> None:
+    rows = Dataset.from_dict({"source_text": [TEXT] * 32, "spans": [SPANS] * 32})
+    encoded = rows.map(
+        encode_training_batch,
+        batched=True,
+        remove_columns=rows.column_names,
+        fn_kwargs={"tokenizer": tiny_tokenizer},
+    )
+    datasets = SplitDatasets(train=encoded, validation=encoded)
+    config = PRESETS[ModelPreset.DISTILBERT]
+
+    def trainer_for(steps: int) -> Trainer:
+        options = RunOptions(output_dir=tmp_path / "run", max_steps=steps, use_cpu=True)
+        return build_trainer(
+            tiny_model(tiny_tokenizer), tiny_tokenizer, datasets, config, options
+        )
+
+    trainer_for(1).train()
+    assert list((tmp_path / "run").glob("checkpoint-*"))
+    resumed = trainer_for(2)
+    resumed.train(resume_from_checkpoint=True)
+    assert resumed.state.global_step == 2

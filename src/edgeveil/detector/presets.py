@@ -13,8 +13,8 @@ class TrainingConfig:
     revision: str
     learning_rate: float = 5e-5
     epochs: int = 2
-    device_batch_size: int = 16
-    gradient_accumulation_steps: int = 2
+    device_batch_size: int = 8
+    gradient_accumulation_steps: int = 4
     warmup_share: float = 0.06
     weight_decay: float = 0.01
 

@@ -42,7 +42,8 @@ from edgeveil.spans import EntityType, GoldSpan
 TRAINING_SEED = 1006
 CLASS_WEIGHT_POWER = 0.5
 MAX_CLASS_WEIGHT = 10.0
-EVAL_BATCH_SIZE = 32
+EVAL_BATCH_SIZE = 16
+EMPTY_CACHE_EVERY_STEPS = 50
 DEFAULT_LOGGING_STEPS = 100
 CHECKPOINTS_KEPT = 2
 LENGTH_COLUMN = "length"
@@ -182,6 +183,7 @@ def training_arguments(
         train_sampling_strategy=SAMPLING_STRATEGY,
         length_column_name=LENGTH_COLUMN,
         disable_tqdm=True,
+        torch_empty_cache_steps=EMPTY_CACHE_EVERY_STEPS,
         seed=TRAINING_SEED,
         data_seed=TRAINING_SEED,
         dataloader_pin_memory=False,
