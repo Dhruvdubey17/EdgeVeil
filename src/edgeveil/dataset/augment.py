@@ -8,10 +8,10 @@ from typing import Any
 
 from datasets import Dataset
 
-from edgeveil.dataset.credentials import AugmentedSplit, LabeledText, augment_split
+from edgeveil.dataset.credentials import TEMPLATES_BY_SPLIT, AugmentedSplit, augment_split
 from edgeveil.dataset.openpii import OPENPII_SPLITS, DatasetError
 from edgeveil.dataset.prepare import openpii_clean_dir
-from edgeveil.spans import EntityType, GoldSpan
+from edgeveil.spans import EntityType, GoldSpan, LabeledText
 
 DATA_DIRECTORY_NAME = "data"
 REPORT_NAME = "report.json"
@@ -91,7 +91,7 @@ def count_credential_spans(rows: Sequence[LabeledText]) -> int:
 
 def augment_and_write_split(data_dir: Path, split: str, seed: int) -> AugmentedSplit:
     uids, rows = load_clean_split(data_dir, split)
-    augmented = augment_split(rows, split_rng(seed, split))
+    augmented = augment_split(rows, TEMPLATES_BY_SPLIT[split], split_rng(seed, split))
     path = openpii_augmented_dir(data_dir) / f"{split}.parquet"
     Dataset.from_list(augmented_records(uids, augmented)).to_parquet(str(path))
     return augmented

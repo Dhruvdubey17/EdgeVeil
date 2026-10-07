@@ -10,10 +10,11 @@ from edgeveil.dataset.credentials import (
     API_KEY_SHAPES,
     CREDENTIAL_ROW_FRACTION,
     HARD_NEGATIVE_ROW_FRACTION,
-    HARD_NEGATIVE_TEMPLATES,
-    STANDALONE_TEMPLATES,
-    LabeledText,
+    TEMPLATES_BY_SPLIT,
+    TRAIN_TEMPLATES,
+    VALIDATION_TEMPLATES,
     Origin,
+    TemplateSet,
     augment_split,
     generate_api_key,
     generate_hard_negative,
@@ -23,7 +24,7 @@ from edgeveil.dataset.credentials import (
     insertion_points,
     render_template,
 )
-from edgeveil.spans import EntityType, GoldSpan
+from edgeveil.spans import EntityType, GoldSpan, LabeledText
 
 REPOSITORY_ROOT = Path(__file__).parent.parent
 PROVIDER_KEY_PATTERNS = {
@@ -88,7 +89,10 @@ def test_repository_holds_no_literal_provider_keys() -> None:
 
 def test_rendered_template_labels_only_the_secret_values() -> None:
     rng = random.Random(3)
-    for template in STANDALONE_TEMPLATES:
+    for template in [
+        *TRAIN_TEMPLATES.standalone_contexts,
+        *VALIDATION_TEMPLATES.standalone_contexts,
+    ]:
         rendered = render_template(template, rng)
         assert rendered.spans
         for span in rendered.spans:
@@ -99,7 +103,9 @@ def test_rendered_template_labels_only_the_secret_values() -> None:
             assert not value.startswith("Bearer")
 
 
-@pytest.mark.parametrize("template", HARD_NEGATIVE_TEMPLATES)
+@pytest.mark.parametrize(
+    "template", [*TRAIN_TEMPLATES.hard_negatives, *VALIDATION_TEMPLATES.hard_negatives]
+)
 def test_hard_negatives_have_no_spans(template: str) -> None:
     rendered = generate_hard_negative(random.Random(4), template)
     assert rendered.spans == ()
@@ -159,7 +165,7 @@ def test_augmenting_keeps_original_span_texts(
         spans.append(GoldSpan(len(text), len(text) + len(value), EntityType.EMAIL))
         text += value
     rows = [LabeledText(text=text or "a", spans=tuple(spans) if text else ())] * 30
-    result = augment_split(rows, random.Random(seed))
+    result = augment_split(rows, TRAIN_TEMPLATES, random.Random(seed))
     original = sorted(span_texts(rows[0]))
     for row, origin in zip(result.rows, result.origins, strict=True):
         if origin is Origin.CREDENTIAL_TEMPLATE:
@@ -177,7 +183,7 @@ def test_augmentation_hits_the_target_fractions() -> None:
         email_row(f"Row {index}. Mail ada@example.com.", "ada@example.com")
         for index in range(1000)
     ]
-    result = augment_split(rows, random.Random(5))
+    result = augment_split(rows, TRAIN_TEMPLATES, random.Random(5))
     with_credentials = sum(
         any(span.label is EntityType.CREDENTIAL for span in row.spans)
         for row in result.rows
@@ -194,12 +200,65 @@ def test_augmentation_is_deterministic_for_a_seed() -> None:
         email_row(f"Row {index}. Mail ada@example.com.", "ada@example.com")
         for index in range(200)
     ]
-    first = augment_split(rows, random.Random(6))
-    second = augment_split(rows, random.Random(6))
+    first = augment_split(rows, TRAIN_TEMPLATES, random.Random(6))
+    second = augment_split(rows, TRAIN_TEMPLATES, random.Random(6))
     assert [row.text for row in first.rows] == [row.text for row in second.rows]
 
 
 def test_labeled_text_repr_hides_text() -> None:
     assert "example.com" not in repr(
         email_row("Mail ada@example.com", "ada@example.com")
+    )
+
+
+TEMPLATE_GROUPS = ("credential_sentences", "standalone_contexts", "hard_negatives")
+
+
+def template_group(templates: TemplateSet, group: str) -> set[str]:
+    groups = {
+        "credential_sentences": templates.credential_sentences,
+        "standalone_contexts": templates.standalone_contexts,
+        "hard_negatives": templates.hard_negatives,
+    }
+    return set(groups[group])
+
+
+@pytest.mark.parametrize("group", TEMPLATE_GROUPS)
+def test_train_and_validation_templates_are_disjoint(group: str) -> None:
+    train = template_group(TRAIN_TEMPLATES, group)
+    validation = template_group(VALIDATION_TEMPLATES, group)
+    assert train
+    assert validation
+    assert not train & validation
+
+
+@pytest.mark.parametrize("templates", [TRAIN_TEMPLATES, VALIDATION_TEMPLATES])
+@pytest.mark.parametrize("marker", ["{password}", "{api_key}", "{token}"])
+def test_each_template_set_covers_every_secret_kind(
+    templates: TemplateSet, marker: str
+) -> None:
+    assert any(marker in sentence for sentence in templates.credential_sentences)
+
+
+def test_templates_are_assigned_to_both_splits() -> None:
+    assert TEMPLATES_BY_SPLIT == {
+        "train": TRAIN_TEMPLATES,
+        "validation": VALIDATION_TEMPLATES,
+    }
+
+
+def test_validation_rows_only_use_validation_templates() -> None:
+    rows = [
+        email_row(f"Row {index}. Mail ada@example.com.", "ada@example.com")
+        for index in range(500)
+    ]
+    result = augment_split(rows, VALIDATION_TEMPLATES, random.Random(8))
+    train_fragments = [
+        sentence.split("{")[0]
+        for sentence in TRAIN_TEMPLATES.credential_sentences
+        + TRAIN_TEMPLATES.hard_negatives
+        if len(sentence.split("{")[0]) > 8
+    ]
+    assert not any(
+        fragment in row.text for row in result.rows for fragment in train_fragments
     )

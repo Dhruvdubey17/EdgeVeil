@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 MIN_SCORE = 0.0
@@ -59,3 +59,9 @@ class GoldSpan:
 
     def __post_init__(self) -> None:
         check_offsets(self.start, self.end)
+
+
+@dataclass(frozen=True, slots=True)
+class LabeledText:
+    text: str = field(repr=False)
+    spans: tuple[GoldSpan, ...]

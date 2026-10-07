@@ -5,11 +5,11 @@ import re
 import string
 import uuid
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 from edgeveil.dataset.openpii import DatasetError
-from edgeveil.spans import EntityType, GoldSpan
+from edgeveil.spans import EntityType, GoldSpan, LabeledText
 
 CREDENTIAL_ROW_FRACTION = 0.04
 STANDALONE_CONTEXT_SHARE = 0.25
@@ -52,35 +52,69 @@ PASSPHRASE_WORDS = (
 MARKER = re.compile(r"\{(\w+)\}")
 SENTENCE_BOUNDARY = re.compile(r"[.!?]\s+|\n")
 
-CREDENTIAL_SENTENCES = (
-    "My password is {password}.",
-    "The temporary password is {password}, please change it after you log in.",
-    "Password: {password}",
-    "I changed the Wi-Fi password to {password} last night.",
-    "Here is the API key: {api_key}",
-    "Our production API key is {api_key}, do not share it.",
-    "Set the key to {api_key} in the dashboard settings.",
-    "Use this access token: {token}",
-    "The session token {token} expires in an hour.",
-    "Authorization: Bearer {token}",
+
+@dataclass(frozen=True, slots=True)
+class TemplateSet:
+    credential_sentences: tuple[str, ...]
+    standalone_contexts: tuple[str, ...]
+    hard_negatives: tuple[str, ...]
+
+
+TRAIN_TEMPLATES = TemplateSet(
+    credential_sentences=(
+        "My password is {password}.",
+        "The temporary password is {password}, please change it after you log in.",
+        "Password: {password}",
+        "I changed the Wi-Fi password to {password} last night.",
+        "Here is the API key: {api_key}",
+        "Our production API key is {api_key}, do not share it.",
+        "Set the key to {api_key} in the dashboard settings.",
+        "The staging key {api_key} only works from the office network.",
+        "Use this access token: {token}",
+        "The session token {token} expires in an hour.",
+        "Authorization: Bearer {token}",
+        "Send {token} in the auth header when you call the endpoint.",
+    ),
+    standalone_contexts=(
+        "DATABASE_HOST=localhost\nDATABASE_PASSWORD={password}\nAPI_KEY={api_key}\nDEBUG=false",
+        'curl -H "Authorization: Bearer {token}" https://api.example.com/v1/orders',
+        '{\n  "client_id": "app-412",\n  "client_secret": "{api_key}"\n}',
+        'client = Client(api_key="{api_key}", timeout=30)',
+        "auth:\n  username: deploy\n  password: {password}\n  token: {token}",
+        "export SERVICE_API_KEY={api_key}",
+    ),
+    hard_negatives=(
+        "Fixed in commit {commit_sha}.",
+        "See {short_sha} for the revert.",
+        "Request ID: {uuid}",
+        "Trace {uuid} completed without errors.",
+        "The SHA-256 checksum of the installer is {sha256}.",
+        "MD5: {md5}",
+        "Thumbnail: data:image/png;base64,{base64}",
+    ),
 )
-STANDALONE_TEMPLATES = (
-    "DATABASE_HOST=localhost\nDATABASE_PASSWORD={password}\nAPI_KEY={api_key}\nDEBUG=false",
-    'curl -H "Authorization: Bearer {token}" https://api.example.com/v1/orders',
-    '{\n  "client_id": "app-412",\n  "client_secret": "{api_key}"\n}',
-    'client = Client(api_key="{api_key}", timeout=30)',
-    "auth:\n  username: deploy\n  password: {password}\n  token: {token}",
-    "export SERVICE_API_KEY={api_key}",
+VALIDATION_TEMPLATES = TemplateSet(
+    credential_sentences=(
+        "Can you check why {password} is rejected as my password?",
+        "I stored the password {password} in the shared vault.",
+        "Paste the API key {api_key} into the integration form.",
+        "The old key {api_key} was revoked this morning.",
+        "Refresh token: {token}",
+        "The webhook signs each request with {token}.",
+    ),
+    standalone_contexts=(
+        "[credentials]\nuser = svc-backup\npassword = {password}\nregion = eu-west",
+        'headers = {"X-Api-Key": "{api_key}", "Accept": "application/json"}',
+        "docker run -e ACCESS_TOKEN={token} -e LOG_LEVEL=info worker:2.3",
+    ),
+    hard_negatives=(
+        "Build {short_sha} passed all checks.",
+        "Correlation ID {uuid} was attached to the ticket.",
+        "Expected checksum (SHA-256): {sha256}",
+        "The attachment is base64 encoded: {base64}",
+    ),
 )
-HARD_NEGATIVE_TEMPLATES = (
-    "Fixed in commit {commit_sha}.",
-    "See {short_sha} for the revert.",
-    "Request ID: {uuid}",
-    "Trace {uuid} completed without errors.",
-    "The SHA-256 checksum of the installer is {sha256}.",
-    "MD5: {md5}",
-    "Thumbnail: data:image/png;base64,{base64}",
-)
+TEMPLATES_BY_SPLIT = {"train": TRAIN_TEMPLATES, "validation": VALIDATION_TEMPLATES}
 
 
 class TemplateError(DatasetError):
@@ -92,12 +126,6 @@ class Origin(StrEnum):
     OPENPII_WITH_CREDENTIAL = "openpii_with_credential"
     OPENPII_WITH_HARD_NEGATIVE = "openpii_with_hard_negative"
     CREDENTIAL_TEMPLATE = "credential_template"
-
-
-@dataclass(frozen=True, slots=True)
-class LabeledText:
-    text: str = field(repr=False)
-    spans: tuple[GoldSpan, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -308,24 +336,32 @@ def plan_augmentation(row_count: int, rng: random.Random) -> AugmentationPlan:
 
 
 def augment_row(
-    index: int, row: LabeledText, plan: AugmentationPlan, rng: random.Random
+    index: int,
+    row: LabeledText,
+    plan: AugmentationPlan,
+    templates: TemplateSet,
+    rng: random.Random,
 ) -> tuple[LabeledText, Origin]:
     if index in plan.credential_targets:
-        snippet = render_template(rng.choice(CREDENTIAL_SENTENCES), rng)
+        snippet = render_template(rng.choice(templates.credential_sentences), rng)
         return insert_at_random_point(row, snippet, rng), Origin.OPENPII_WITH_CREDENTIAL
     if index in plan.hard_negative_targets:
-        snippet = render_template(rng.choice(HARD_NEGATIVE_TEMPLATES), rng)
+        snippet = render_template(rng.choice(templates.hard_negatives), rng)
         return insert_at_random_point(
             row, snippet, rng
         ), Origin.OPENPII_WITH_HARD_NEGATIVE
     return row, Origin.OPENPII
 
 
-def augment_split(rows: Sequence[LabeledText], rng: random.Random) -> AugmentedSplit:
+def augment_split(
+    rows: Sequence[LabeledText], templates: TemplateSet, rng: random.Random
+) -> AugmentedSplit:
     plan = plan_augmentation(len(rows), rng)
-    augmented = [augment_row(index, row, plan, rng) for index, row in enumerate(rows)]
+    augmented = [
+        augment_row(index, row, plan, templates, rng) for index, row in enumerate(rows)
+    ]
     for _ in range(plan.standalone_rows):
-        template = render_template(rng.choice(STANDALONE_TEMPLATES), rng)
+        template = render_template(rng.choice(templates.standalone_contexts), rng)
         augmented.append((template, Origin.CREDENTIAL_TEMPLATE))
     return AugmentedSplit(
         rows=[row for row, _ in augmented],
