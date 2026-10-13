@@ -16,6 +16,10 @@ The model is trained on [ai4privacy/pii-masking-openpii-1.5m](https://huggingfac
 
 All CREDENTIAL training data is synthetic. The passwords, API keys, and tokens come from a seeded generator, not from real leaked secrets.
 
+## Training
+
+Fine-tuned on a Kaggle GPU with `scripts/kaggle_train.sh` (see `docs/training.md`). The GPU model, library versions, seeds, and revisions of every run are in its `training_run.json`. Inference and all reported latency numbers come from on-device runs.
+
 ## Results
 
 Not measured yet.

@@ -96,6 +96,18 @@ U+00A0 (no-break space) and U+202F (narrow no-break space) count as whitespace e
 - Logits are reduced to argmax label ids before Trainer gathers them (`preprocess_logits_for_metrics`), so evaluating 41,000 validation windows holds integers rather than 17 floats per token.
 - Every run writes `training_run.json` next to the model with the preset, base model revision, dataset revision, seed, device, platform, library versions, class weights, training time, and validation metrics.
 
+## Where training runs
+
+Fine-tuning runs on a Kaggle GPU, not on the M3. The full two-epoch run on the M3 (device batch 8, accumulation 4) started on 2026-10-12 and failed. The loss was 2.298 at step 100. At step 200 the gradient norm was NaN, the loss read 0 at steps 300 and 400, and every log after that was NaN. The log showed repeated Metal errors, `Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)`: GPU command buffers failed for lack of memory, PyTorch kept going on the results of work that never completed, and the weights filled with NaN. The run also slowed to about 0.03 steps per second (1,200 steps in about 10 hours) against 0.70 in the 50-step smoke run, which was too short to show the problem. Training needs about 5 GiB at the worst batch on an 8 GiB machine that also runs the OS and other apps.
+
+- `NonFiniteLossGuard` now stops training with `TrainingDivergedError` the moment a logged loss or gradient norm is NaN or infinite, so a bad run fails in minutes instead of hours.
+- Only training moves. Inference, threshold tuning, evaluation, export, and benchmarks run on the M3, and the on-device claims rest on those runs. The training data is public and synthetic, so moving training off the device sends no user data anywhere.
+- `scripts/kaggle_train.sh` installs the locked environment with `uv sync --locked`, then replaces the CPU torch build that the lock pins for Linux with the CUDA 12.6 build of the same version (`uv pip install --torch-backend cu126`). torch 2.14.1 has cu126 and cu130 wheels for CPython 3.13 but no cu128 wheel, so the backend is pinned rather than detected. CUDA 12.6 runs on any recent NVIDIA driver through minor-version compatibility.
+- The script rebuilds the data on Kaggle (`data download`, `prepare`, `augment`) from the pinned OpenPII revision and the fixed seed instead of uploading it. The prepare and augment reports are copied to the output, so they can be compared with the local reports to confirm the same rows were built.
+- `CUDA_VISIBLE_DEVICES=0`: on a two-GPU machine, Trainer would wrap the model in DataParallel and multiply the per-device batch by the GPU count, changing the effective batch from 32 to 64.
+- `--device-batch-size` sets windows per device step and recomputes accumulation so the effective batch stays 32. The Kaggle default is 16, which at 512 tokens needs roughly twice the 5.06 GiB measured for 8 x 512 on the M3, well within a 16 GB GPU.
+- `training_run.json` records the accelerator name (`torch.cuda.get_device_name` on CUDA).
+
 ## Thresholds and decoding
 
 - `edgeveil.detector.decoding` is the one function from logits to spans that every backend uses. For each token, the entity mass of a type is P(B-type) + P(I-type). The token takes the type with the highest mass and keeps it only if that mass reaches the type's threshold; otherwise it is O. B or I follows whichever of the two has more probability. A span's score is the mean entity mass of its tokens.
