@@ -1,5 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
+
+
+class InvalidBatchLayoutError(ValueError):
+    pass
 
 
 class ModelPreset(StrEnum):
@@ -33,3 +37,16 @@ PRESETS = {
         revision="8949b909ec900327062f0ebf497f51aef5e6f0c8",
     ),
 }
+
+
+def with_device_batch(config: TrainingConfig, device_batch_size: int) -> TrainingConfig:
+    effective = config.effective_batch_size
+    if device_batch_size <= 0 or effective % device_batch_size:
+        raise InvalidBatchLayoutError(
+            f"device batch {device_batch_size} must divide effective batch {effective}"
+        )
+    return replace(
+        config,
+        device_batch_size=device_batch_size,
+        gradient_accumulation_steps=effective // device_batch_size,
+    )

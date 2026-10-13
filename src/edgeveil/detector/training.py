@@ -1,4 +1,5 @@
 import json
+import math
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -24,7 +25,7 @@ from transformers import (
     set_seed,
 )
 
-from edgeveil.bench.environment import environment_record
+from edgeveil.bench.environment import chip_name, environment_record
 from edgeveil.dataset.augment import openpii_augmented_dir
 from edgeveil.dataset.openpii import OPENPII_REVISION
 from edgeveil.detector.alignment import token_label_ids
@@ -35,7 +36,12 @@ from edgeveil.detector.labels import (
     LABEL_TO_ID,
 )
 from edgeveil.detector.metrics import OVERALL_REPORT_KEY, strict_entity_scores
-from edgeveil.detector.presets import PRESETS, ModelPreset, TrainingConfig
+from edgeveil.detector.presets import (
+    PRESETS,
+    ModelPreset,
+    TrainingConfig,
+    with_device_batch,
+)
 from edgeveil.detector.windows import encode_windows
 from edgeveil.spans import EntityType, GoldSpan
 
@@ -64,6 +70,7 @@ class RunOptions:
     use_cpu: bool = False
     logging_steps: int = DEFAULT_LOGGING_STEPS
     resume: bool = False
+    device_batch_size: int | None = None
 
 
 def spans_from_records(records: Iterable[Mapping[str, Any]]) -> list[GoldSpan]:
@@ -192,6 +199,38 @@ def training_arguments(
     )
 
 
+class TrainingDivergedError(RuntimeError):
+    pass
+
+
+GUARDED_LOG_KEYS = ("loss", "grad_norm")
+
+
+class NonFiniteLossGuard(TrainerCallback):
+    def on_log(
+        self,
+        args: Any,
+        state: Any,
+        control: Any,
+        logs: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        for key in GUARDED_LOG_KEYS:
+            value = (logs or {}).get(key)
+            if value is not None and not math.isfinite(float(value)):
+                raise TrainingDivergedError(
+                    f"{key} became {value} at step {state.global_step}; stopping"
+                )
+
+
+def accelerator_name(device: torch.device) -> str:
+    if device.type == "cuda":
+        return torch.cuda.get_device_name(device)
+    if device.type == "mps":
+        return f"{chip_name()} GPU through MPS"
+    return f"{chip_name()} CPU"
+
+
 def build_trainer(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
@@ -209,6 +248,7 @@ def build_trainer(
         compute_loss_func=weighted_token_loss(class_weights(datasets.train["labels"])),
         compute_metrics=entity_metrics,
         preprocess_logits_for_metrics=most_likely_labels,
+        callbacks=[NonFiniteLossGuard()],
     )
     trainer.loss_is_scaled_for_ga = False
     return trainer
@@ -284,6 +324,7 @@ class TrainingRecord:
     training_seed: int
     config: dict[str, Any]
     device: str
+    accelerator: str
     environment: dict[str, Any]
     train_windows: int
     validation_windows: int
@@ -302,9 +343,11 @@ def train_detector(
     preset: ModelPreset,
     options: RunOptions | None = None,
 ) -> TrainingRecord:
-    config = PRESETS[preset]
     output_dir = models_dir / preset.value
     run_options = options or RunOptions(output_dir=output_dir / "checkpoints")
+    config = PRESETS[preset]
+    if run_options.device_batch_size is not None:
+        config = with_device_batch(config, run_options.device_batch_size)
     model, tokenizer = load_base_model(config)
     datasets = SplitDatasets(
         train=windowed_split(data_dir, "train", tokenizer),
@@ -326,6 +369,7 @@ def train_detector(
         training_seed=TRAINING_SEED,
         config=asdict(config),
         device=str(trainer.args.device),
+        accelerator=accelerator_name(trainer.args.device),
         environment=environment_record(),
         train_windows=len(datasets.train),
         validation_windows=len(datasets.validation),

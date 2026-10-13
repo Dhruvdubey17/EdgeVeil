@@ -22,11 +22,18 @@ from edgeveil.detector.labels import (
     IGNORED_LABEL_ID,
     LABEL_TO_ID,
 )
-from edgeveil.detector.presets import PRESETS, ModelPreset
+from edgeveil.detector.presets import (
+    PRESETS,
+    InvalidBatchLayoutError,
+    ModelPreset,
+    with_device_batch,
+)
 from edgeveil.detector.training import (
     MAX_CLASS_WEIGHT,
+    NonFiniteLossGuard,
     RunOptions,
     SplitDatasets,
+    TrainingDivergedError,
     build_trainer,
     class_weights,
     encode_training_batch,
@@ -175,3 +182,32 @@ def test_training_resumes_from_the_last_checkpoint(
     resumed = trainer_for(2)
     resumed.train(resume_from_checkpoint=True)
     assert resumed.state.global_step == 2
+
+
+def test_device_batch_override_keeps_the_effective_batch() -> None:
+    config = PRESETS[ModelPreset.DISTILBERT]
+    larger = with_device_batch(config, 16)
+    assert larger.device_batch_size == 16
+    assert larger.effective_batch_size == config.effective_batch_size
+
+
+@pytest.mark.parametrize("size", [0, 3, 64])
+def test_device_batch_must_divide_the_effective_batch(size: int) -> None:
+    with pytest.raises(InvalidBatchLayoutError):
+        with_device_batch(PRESETS[ModelPreset.DISTILBERT], size)
+
+
+@pytest.mark.parametrize("key", ["loss", "grad_norm"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_non_finite_loss_stops_training(key: str, value: float) -> None:
+    guard = NonFiniteLossGuard()
+    with pytest.raises(TrainingDivergedError):
+        guard.on_log(None, SimpleNamespace(global_step=200), None, logs={key: value})
+
+
+def test_finite_logs_pass_the_guard() -> None:
+    guard = NonFiniteLossGuard()
+    guard.on_log(
+        None, SimpleNamespace(global_step=1), None, logs={"loss": 0.5, "grad_norm": 2.0}
+    )
+    guard.on_log(None, SimpleNamespace(global_step=1), None, logs={"eval_loss": 0.4})

@@ -102,6 +102,12 @@ def train(
         bool,
         typer.Option(help="Continue from the last checkpoint in the models directory."),
     ] = False,
+    device_batch_size: Annotated[
+        int | None,
+        typer.Option(
+            help="Windows per device step; accumulation keeps the effective batch."
+        ),
+    ] = None,
 ) -> None:
     from edgeveil.detector.training import RunOptions, train_detector
 
@@ -110,11 +116,12 @@ def train(
         max_steps=max_steps,
         logging_steps=logging_steps,
         resume=resume,
+        device_batch_size=device_batch_size,
     )
     record = train_detector(data_dir, models_dir, preset, options)
     seconds = record.training_seconds
     output_console.print(
-        f"Trained {record.base_model} in {seconds:.0f} s on {record.device}."
+        f"Trained {record.base_model} in {seconds:.0f} s on {record.accelerator}."
     )
     output_console.print(f"Saved to {models_dir / record.preset}.")
 
