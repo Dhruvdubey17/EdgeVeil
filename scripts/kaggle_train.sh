@@ -7,6 +7,7 @@ TORCH_BACKEND=cu126
 DEVICE_BATCH_SIZE="${EDGEVEIL_DEVICE_BATCH_SIZE:-16}"
 
 export CUDA_VISIBLE_DEVICES=0
+unset PYTHONPATH PYTHONSTARTUP CONDA_PREFIX VIRTUAL_ENV
 export HF_DATASETS_DISABLE_PROGRESS_BARS=1
 export PYTHONUNBUFFERED=1
 
@@ -17,7 +18,7 @@ cd "$WORK_DIR"
 pip install --quiet uv
 uv sync --locked --extra train --no-dev
 TORCH_VERSION="$(uv run --no-sync python -c 'import torch; print(torch.__version__.split("+")[0])')"
-uv pip install --reinstall-package torch --torch-backend "$TORCH_BACKEND" "torch==$TORCH_VERSION"
+uv pip install --python .venv/bin/python --reinstall-package torch --torch-backend "$TORCH_BACKEND" "torch==$TORCH_VERSION"
 uv run --no-sync python -c 'import torch; assert torch.cuda.is_available(), "no CUDA GPU"; print(torch.__version__, torch.cuda.get_device_name(0))'
 
 uv run --no-sync edgeveil data download
