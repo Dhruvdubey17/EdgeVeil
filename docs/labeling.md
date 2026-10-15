@@ -61,6 +61,7 @@ Label in Label Studio with `docs/label_studio.xml`. Select character spans.
 ## CREDIT_CARD
 
 - A full payment card number, with its spaces or dashes. A partial number such as the last four digits is not labeled.
+- The expiry date and the security code (CVV, CVC) are not labeled. The expiry is a date, and security codes are outside the entity set.
 
 ## GOV_ID
 
