@@ -118,6 +118,14 @@ Fine-tuning runs on a Kaggle GPU, not on the M3. The full two-epoch run on the M
 - Scoring uses the final spans the product emits, after thresholds and merging, re-encoded as IOB2 over each text's tokens and scored with strict seqeval. The test-set evaluation will use the same function.
 - Results go to `bench/results/thresholds/<preset>-fp32-torch.json` with the chosen threshold, precision, recall, F2, and support per type, the full curve, the model and dataset revisions, and the chip, OS, and library versions.
 
+## First test-set evaluation and what it exposed
+
+The first run of `edgeveil eval` on the hand-labeled test set (235 snippets, 2026-10-15) scored a strict overall F1 of 0.561 against 0.985 on validation, with EMAIL at 0.000. Results: `bench/results/accuracy/baseline/distilbert-fp32-torch-2026-10-15.json`.
+
+- Emitted emails were fragmented (`k.obrien@` and `com` as two spans), so strict matching scored none of them. Every test email is on `example.com` or `example.org`, as the synthetic-data rule requires. None of the 91,238 training emails used those domains, and `example.com`/`example.org` appeared 413 times in training text labeled O, mostly in URLs from the credential templates (`https://api.example.com/...`). The model learned that those domain tokens are not PII.
+- Thresholds were applied per token. With EMAIL at 0.80 and CREDENTIAL at 0.95, one inner token below the threshold cut a span in two (`P@ssw0rd-Linden` from a longer password).
+- The test set exposed both problems, so the evaluation after the fixes is not fully independent of the test set. The fixes are tuned on validation only, and no threshold or rule is chosen by looking at test-set scores.
+
 ## Evaluation statistics
 
 Per-type precision, recall, and F1 each get a 95% bootstrap confidence interval. Resampling is over test snippets, not spans, because spans in one snippet are not independent. The seed and the number of resamples are named constants, so a rerun reproduces the same interval. With about 200 snippets and 40 instances per type, a single F1 number would hide a wide interval.
