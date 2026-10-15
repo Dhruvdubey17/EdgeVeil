@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from typer.testing import CliRunner
 
@@ -29,3 +31,14 @@ def test_without_arguments_shows_every_command() -> None:
 
 def test_tracebacks_never_show_local_variables() -> None:
     assert app.pretty_exceptions_show_locals is False
+
+
+def test_import_labels_reports_a_missing_export_without_a_traceback(
+    tmp_path: Path,
+) -> None:
+    result = runner.invoke(
+        app, ["data", "import-labels", str(tmp_path / "missing.json")]
+    )
+    assert result.exit_code != 0
+    assert "does not exist" in result.output
+    assert "Traceback" not in result.output

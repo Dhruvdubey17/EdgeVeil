@@ -106,7 +106,15 @@ def gaps(
     help="Convert a Label Studio JSON export into the hand-labeled test set.",
 )
 def import_labels(
-    export_path: Annotated[Path, typer.Argument(help="Label Studio JSON export file.")],
+    export_path: Annotated[
+        Path,
+        typer.Argument(
+            help="Label Studio JSON export file.",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     output: Annotated[
         Path, typer.Option(help="Where to write the test set JSONL.")
     ] = DEFAULT_TEST_SET_PATH,
