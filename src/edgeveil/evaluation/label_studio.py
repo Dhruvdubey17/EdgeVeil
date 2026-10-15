@@ -79,12 +79,21 @@ def utf16_to_code_point_offsets(text: str) -> dict[int, int]:
     return table
 
 
+ESCAPED_NEWLINE = "\\n"
+
+
+def matches_stored_text(covered: str, stored: str) -> bool:
+    return covered in (stored, stored.replace(ESCAPED_NEWLINE, "\n"))
+
+
 def resolve_offsets(text: str, value: RegionValue) -> tuple[int, int] | None:
-    if text[value.start : value.end] == value.text:
+    if matches_stored_text(text[value.start : value.end], value.text):
         return value.start, value.end
     table = utf16_to_code_point_offsets(text)
     start, end = table.get(value.start), table.get(value.end)
-    if start is None or end is None or text[start:end] != value.text:
+    if start is None or end is None:
+        return None
+    if not matches_stored_text(text[start:end], value.text):
         return None
     return start, end
 

@@ -171,3 +171,14 @@ def test_a_task_id_in_two_exports_is_an_issue(tmp_path: Path) -> None:
         (1, "task id appears 2 times")
     ]
     assert not output.exists()
+
+
+def test_newlines_stored_as_backslash_n_still_match() -> None:
+    text = "Ship to:\n9 Sample Court\nFakesburg, ZZ 00034"
+    stored = "9 Sample Court\\nFakesburg, ZZ 00034"
+    snippets, issues = convert_export(
+        [task(1, [region(9, len(text), "ADDRESS", text=stored)], text=text)]
+    )
+    assert issues == []
+    span = snippets[0].spans[0]
+    assert text[span.start : span.end] == "9 Sample Court\nFakesburg, ZZ 00034"
