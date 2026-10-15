@@ -127,7 +127,7 @@ def test_import_writes_a_test_set_the_loader_reads(tmp_path: Path) -> None:
     export_path.write_text(json.dumps([task(7, [region(5, 20, "EMAIL")])]))
     output = tmp_path / "data" / "test" / "test_set.jsonl"
 
-    issues = import_label_studio_export(export_path, output)
+    issues = import_label_studio_export([export_path], output)
 
     assert issues == []
     [snippet] = load_test_set(output)
@@ -140,7 +140,7 @@ def test_import_with_issues_writes_nothing(tmp_path: Path) -> None:
     export_path = tmp_path / "export.json"
     export_path.write_text(json.dumps([task(7, [region(4, 20, "EMAIL")])]))
     output = tmp_path / "data" / "test" / "test_set.jsonl"
-    issues = import_label_studio_export(export_path, output)
+    issues = import_label_studio_export([export_path], output)
     assert issues
     assert not output.exists()
 
@@ -148,3 +148,26 @@ def test_import_with_issues_writes_nothing(tmp_path: Path) -> None:
 def test_labeling_issue_is_a_plain_value() -> None:
     issue = LabelingIssue(task_id=3, start=1, end=2, problem="overlap")
     assert issue.task_id == 3
+
+
+def test_import_combines_several_exports(tmp_path: Path) -> None:
+    first, second = tmp_path / "first.json", tmp_path / "second.json"
+    first.write_text(json.dumps([task(1, [region(5, 20, "EMAIL")])]))
+    second.write_text(json.dumps([task(2, [region(29, 37, "PHONE")])]))
+    output = tmp_path / "data" / "test" / "test_set.jsonl"
+
+    assert import_label_studio_export([first, second], output) == []
+    assert [snippet.snippet_id for snippet in load_test_set(output)] == [1, 2]
+
+
+def test_a_task_id_in_two_exports_is_an_issue(tmp_path: Path) -> None:
+    first, second = tmp_path / "first.json", tmp_path / "second.json"
+    first.write_text(json.dumps([task(1, [region(5, 20, "EMAIL")])]))
+    second.write_text(json.dumps([task(1, [region(29, 37, "PHONE")])]))
+    output = tmp_path / "data" / "test" / "test_set.jsonl"
+
+    issues = import_label_studio_export([first, second], output)
+    assert [(issue.task_id, issue.problem) for issue in issues] == [
+        (1, "task id appears 2 times")
+    ]
+    assert not output.exists()

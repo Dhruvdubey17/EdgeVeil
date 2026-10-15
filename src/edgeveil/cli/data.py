@@ -103,13 +103,13 @@ def gaps(
 
 @data_app.command(
     name="import-labels",
-    help="Convert a Label Studio JSON export into the hand-labeled test set.",
+    help="Convert Label Studio JSON exports into the hand-labeled test set.",
 )
 def import_labels(
-    export_path: Annotated[
-        Path,
+    export_paths: Annotated[
+        list[Path],
         typer.Argument(
-            help="Label Studio JSON export file.",
+            help="Label Studio JSON exports, combined into one test set.",
             exists=True,
             dir_okay=False,
             readable=True,
@@ -121,7 +121,7 @@ def import_labels(
 ) -> None:
     from edgeveil.evaluation.label_studio import import_label_studio_export
 
-    issues = import_label_studio_export(export_path, output)
+    issues = import_label_studio_export(export_paths, output)
     if not issues:
         console.print(f"Wrote the test set to {output}.")
         return

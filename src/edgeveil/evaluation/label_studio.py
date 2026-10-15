@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import pairwise
@@ -158,10 +159,23 @@ def parse_export(export: Any) -> list[Task]:
         raise LabelStudioExportError(f"export has {count} schema errors") from error
 
 
+def duplicate_task_issues(tasks: Sequence[Task]) -> list[LabelingIssue]:
+    counts = Counter(task.id for task in tasks)
+    return [
+        LabelingIssue(task_id, None, None, f"task id appears {count} times")
+        for task_id, count in sorted(counts.items())
+        if count > 1
+    ]
+
+
 def convert_export(export: Any) -> tuple[list[LabeledSnippet], list[LabelingIssue]]:
+    tasks = parse_export(export)
+    duplicates = duplicate_task_issues(tasks)
+    if duplicates:
+        return [], duplicates
     snippets: list[LabeledSnippet] = []
     issues: list[LabelingIssue] = []
-    for task in parse_export(export):
+    for task in tasks:
         snippet, task_issues = convert_task(task)
         if snippet is not None:
             snippets.append(snippet)
@@ -170,10 +184,14 @@ def convert_export(export: Any) -> tuple[list[LabeledSnippet], list[LabelingIssu
 
 
 def import_label_studio_export(
-    export_path: Path, output_path: Path
+    export_paths: Sequence[Path], output_path: Path
 ) -> list[LabelingIssue]:
-    export = json.loads(export_path.read_text(encoding="utf-8"))
-    snippets, issues = convert_export(export)
+    tasks = [
+        task
+        for path in export_paths
+        for task in json.loads(path.read_text(encoding="utf-8"))
+    ]
+    snippets, issues = convert_export(tasks)
     if not issues:
         write_test_set(output_path, snippets)
     return issues
