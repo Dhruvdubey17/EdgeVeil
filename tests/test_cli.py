@@ -14,7 +14,6 @@ runner = CliRunner()
         ["scan", "notes.txt"],
         ["proxy", "--port", "8787", "--upstream", "openai"],
         ["eval", "--precision", "int8", "--backend", "coreml"],
-        ["bench"],
     ],
 )
 def test_unbuilt_commands_exit_with_not_implemented(arguments: list[str]) -> None:
@@ -42,3 +41,9 @@ def test_import_labels_reports_a_missing_export_without_a_traceback(
     assert result.exit_code != 0
     assert "does not exist" in result.output
     assert "Traceback" not in result.output
+
+
+def test_bench_reports_when_there_are_no_results(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["bench", "--results-dir", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "No accuracy results" in result.output

@@ -1,18 +1,23 @@
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import TYPE_CHECKING, Annotated, NoReturn
 
 import typer
 from rich.console import Console
+from rich.table import Table
 
 from edgeveil.cli.data import data_app
 from edgeveil.detector.presets import ModelPreset
+
+if TYPE_CHECKING:
+    from edgeveil.evaluation.accuracy import AccuracyReport
 
 NOT_IMPLEMENTED_EXIT_CODE = 1
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MODELS_DIR = Path("models")
 DEFAULT_LOGGING_STEPS = 100
 DEFAULT_RESULTS_DIR = Path("bench") / "results"
+DEFAULT_TEST_SET_PATH = DEFAULT_DATA_DIR / "test" / "test_set.jsonl"
 DEFAULT_PROXY_PORT = 8787
 
 app = typer.Typer(
@@ -45,8 +50,8 @@ class Backend(StrEnum):
     QUALCOMM = "qualcomm"
 
 
-def exit_not_implemented(command: str) -> NoReturn:
-    error_console.print(f"edgeveil {command}: not implemented yet")
+def exit_not_implemented(command: str, detail: str = "") -> NoReturn:
+    error_console.print(f"edgeveil {command}: not implemented yet{detail}")
     raise typer.Exit(code=NOT_IMPLEMENTED_EXIT_CODE)
 
 
@@ -77,8 +82,46 @@ def evaluate(
     backend: Annotated[
         Backend, typer.Option(help="Inference backend to evaluate.")
     ] = Backend.TORCH,
+    preset: Annotated[
+        ModelPreset, typer.Option(help="Trained model to evaluate.")
+    ] = ModelPreset.DISTILBERT,
+    test_set: Annotated[
+        Path, typer.Option(help="Hand-labeled test set JSONL.")
+    ] = DEFAULT_TEST_SET_PATH,
+    models_dir: Annotated[
+        Path, typer.Option(help="Directory with trained models.")
+    ] = DEFAULT_MODELS_DIR,
+    results_dir: Annotated[
+        Path, typer.Option(help="Directory for result files.")
+    ] = DEFAULT_RESULTS_DIR,
 ) -> None:
-    exit_not_implemented("eval")
+    if (precision, backend) != (Precision.FP32, Backend.TORCH):
+        exit_not_implemented("eval", f" for {precision.value} on {backend.value}")
+    from edgeveil.evaluation.accuracy import evaluate_test_set, write_accuracy_results
+
+    run_name = f"{preset.value}-{precision.value}-{backend.value}"
+    thresholds = results_dir / "thresholds" / f"{run_name}.json"
+    report = evaluate_test_set(models_dir / preset.value, test_set, thresholds)
+    path = results_dir / "accuracy" / f"{run_name}.json"
+    write_accuracy_results(report, path)
+    output_console.print(accuracy_summary(report))
+    output_console.print(f"Saved to {path}.")
+
+
+def accuracy_summary(report: "AccuracyReport") -> Table:
+    table = Table(title=f"Test set accuracy ({report.snippets} snippets)")
+    for column in ("Type", "Support", "Precision", "Recall", "F1"):
+        table.add_column(column)
+    for name, scored in report.scores.items():
+        table.add_row(
+            name,
+            str(scored.support),
+            *(
+                f"{estimate.value:.3f} [{estimate.low:.3f}, {estimate.high:.3f}]"
+                for estimate in (scored.precision, scored.recall, scored.f1)
+            ),
+        )
+    return table
 
 
 @app.command(help="Fine-tune the detector on the augmented OpenPII data.")
@@ -164,5 +207,16 @@ def tune_thresholds(
 
 
 @app.command(help="Run benchmarks and regenerate every results table.")
-def bench() -> None:
-    exit_not_implemented("bench")
+def bench(
+    results_dir: Annotated[
+        Path, typer.Option(help="Directory with result files.")
+    ] = DEFAULT_RESULTS_DIR,
+) -> None:
+    from edgeveil.bench.tables import render_accuracy_tables
+
+    written = render_accuracy_tables(results_dir)
+    for path in written:
+        output_console.print(path.read_text())
+        output_console.print(f"Wrote {path}.")
+    if not written:
+        output_console.print(f"No accuracy results under {results_dir}.")
