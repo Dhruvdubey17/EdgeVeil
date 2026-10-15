@@ -3,8 +3,8 @@ import pytest
 
 from edgeveil.detector.alignment import SPECIAL_TOKEN_OFFSET
 from edgeveil.detector.decoding import (
+    candidate_label_ids,
     merge_window_spans,
-    thresholded_label_ids,
     window_spans,
 )
 from edgeveil.detector.labels import BIO_LABELS, LABEL_TO_ID
@@ -28,18 +28,33 @@ def span(start: int, end: int, label: EntityType, score: float) -> Span:
 
 def test_entity_mass_combines_begin_and_inside() -> None:
     table = probabilities({"B-EMAIL": 0.3, "I-EMAIL": 0.3})
-    assert thresholded_label_ids(table, UNIFORM) == [LABEL_TO_ID["B-EMAIL"]]
+    assert candidate_label_ids(table) == [LABEL_TO_ID["B-EMAIL"]]
 
 
-def test_mass_below_the_type_threshold_becomes_outside() -> None:
+def test_token_is_outside_when_outside_outweighs_every_type() -> None:
+    table = probabilities({"B-EMAIL": 0.3, "B-PHONE": 0.2})
+    assert candidate_label_ids(table) == [LABEL_TO_ID["O"]]
+
+
+def test_span_below_the_type_threshold_is_dropped() -> None:
     table = probabilities({"B-EMAIL": 0.6})
     thresholds = {**UNIFORM, EntityType.EMAIL: 0.7}
-    assert thresholded_label_ids(table, thresholds) == [LABEL_TO_ID["O"]]
+    assert window_spans(table, [(0, 5)], thresholds) == []
+
+
+def test_one_uncertain_inner_token_does_not_split_a_span() -> None:
+    table = probabilities(
+        {"B-CREDENTIAL": 0.99}, {"I-CREDENTIAL": 0.6}, {"I-CREDENTIAL": 0.99}
+    )
+    thresholds = {**UNIFORM, EntityType.CREDENTIAL: 0.8}
+    [found] = window_spans(table, [(0, 4), (4, 8), (8, 12)], thresholds)
+    assert (found.start, found.end, found.label) == (0, 12, EntityType.CREDENTIAL)
+    assert found.score == pytest.approx(0.86)
 
 
 def test_inside_is_chosen_when_it_outweighs_begin() -> None:
     table = probabilities({"B-PHONE": 0.9}, {"B-PHONE": 0.2, "I-PHONE": 0.7})
-    assert thresholded_label_ids(table, UNIFORM) == [
+    assert candidate_label_ids(table) == [
         LABEL_TO_ID["B-PHONE"],
         LABEL_TO_ID["I-PHONE"],
     ]

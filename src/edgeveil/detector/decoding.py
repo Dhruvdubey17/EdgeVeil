@@ -30,19 +30,16 @@ def entity_masses(probabilities: NDArray[np.floating]) -> NDArray[np.float64]:
     return probabilities[:, BEGIN_IDS] + probabilities[:, INSIDE_IDS]
 
 
-def thresholded_label_ids(
-    probabilities: NDArray[np.floating], thresholds: Thresholds
-) -> list[int]:
+def candidate_label_ids(probabilities: NDArray[np.floating]) -> list[int]:
     masses = entity_masses(probabilities)
     rows = np.arange(len(probabilities))
     best = masses.argmax(axis=1)
-    cutoffs = np.array([thresholds[entity] for entity in ENTITY_ORDER])
-    is_kept = masses[rows, best] >= cutoffs[best]
+    is_entity = masses[rows, best] > probabilities[rows, OUTSIDE_ID]
     is_inside = (
         probabilities[rows, INSIDE_IDS[best]] > probabilities[rows, BEGIN_IDS[best]]
     )
     entity_ids = np.where(is_inside, INSIDE_IDS[best], BEGIN_IDS[best])
-    return np.where(is_kept, entity_ids, OUTSIDE_ID).tolist()
+    return np.where(is_entity, entity_ids, OUTSIDE_ID).tolist()
 
 
 def tokens_inside(span: GoldSpan, offsets: Sequence[Offset]) -> list[int]:
@@ -62,20 +59,13 @@ def window_spans(
 ) -> list[Span]:
     masses = entity_masses(probabilities)
     spans: list[Span] = []
-    for decoded in decode_label_ids(
-        thresholded_label_ids(probabilities, thresholds), offsets
-    ):
+    for decoded in decode_label_ids(candidate_label_ids(probabilities), offsets):
         column = ENTITY_ORDER.index(decoded.label)
-        score = float(masses[tokens_inside(decoded, offsets), column].mean())
-        spans.append(
-            Span(
-                decoded.start,
-                decoded.end,
-                decoded.label,
-                min(score, 1.0),
-                SpanSource.MODEL,
+        score = min(float(masses[tokens_inside(decoded, offsets), column].mean()), 1.0)
+        if score >= thresholds[decoded.label]:
+            spans.append(
+                Span(decoded.start, decoded.end, decoded.label, score, SpanSource.MODEL)
             )
-        )
     return spans
 
 
