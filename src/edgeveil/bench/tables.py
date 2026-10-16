@@ -49,8 +49,6 @@ def render_accuracy_tables(results_dir: Path) -> list[Path]:
     for source in sorted((results_dir / ACCURACY_DIR_NAME).glob("*.json")):
         payload = json.loads(source.read_text())
         table_path = tables_dir / f"accuracy-{source.stem}.md"
-        table_path.write_text(
-            accuracy_table(payload, source.relative_to(results_dir.parent).as_posix())
-        )
+        table_path.write_text(accuracy_table(payload, source.as_posix()))
         written.append(table_path)
     return written

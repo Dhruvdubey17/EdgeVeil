@@ -1,4 +1,4 @@
-distilbert/distilbert-base-cased, fp32, torch. Test set: 235 snippets. Intervals: 1000 bootstrap resamples by snippet. Source: `results/accuracy/distilbert-fp32-torch.json`.
+distilbert/distilbert-base-cased, fp32, torch. Test set: 235 snippets. Intervals: 1000 bootstrap resamples by snippet. Source: `bench/results/accuracy/distilbert-fp32-torch.json`.
 
 | Type | Support | Precision (95% CI) | Recall (95% CI) | F1 (95% CI) |
 |---|---|---|---|---|
