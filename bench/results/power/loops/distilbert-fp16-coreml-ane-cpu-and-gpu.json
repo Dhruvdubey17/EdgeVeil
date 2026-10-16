@@ -1,0 +1,45 @@
+{
+  "precision": "fp16",
+  "backend": "coreml-ane",
+  "compute_units": "cpu-and-gpu",
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "coreml-ane",
+    "precision": "fp16",
+    "compute_units": "cpu-and-gpu",
+    "path": "models/distilbert/coreml-ane/fp16.mlpackage",
+    "sha256": "d9620925be682c34bc9b3eaeedac309161dd96a1253071fc62603c5c9da42c29",
+    "size_bytes": 130586251,
+    "quantization": "Neural Engine layout, FP16 weights and activations"
+  },
+  "loop": {
+    "idle": {
+      "start": 1792185525.068844,
+      "end": 1792185555.0740669
+    },
+    "inference": {
+      "start": 1792185555.0741062,
+      "end": 1792185615.085289
+    },
+    "windows": 2688,
+    "window_tokens": 512
+  },
+  "environment": {
+    "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "datasets": "5.1.0",
+      "seqeval": "1.2.2",
+      "onnxruntime": "1.30.0",
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
+    }
+  }
+}

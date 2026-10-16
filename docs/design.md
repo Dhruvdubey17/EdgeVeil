@@ -497,4 +497,20 @@ Latency of the Neural Engine layout (same machine and method as the latency sect
 - int8 is slightly faster than fp16 at 512 tokens (5.50 against 6.38 ms p95) and loses 0.003 dev-test F1.
 - At 128 tokens the p95 is well above the p50 for several settings (int8 cpu-and-ne 1.28 / 3.84 ms). The timings files keep all 200 calls; the spread has not been investigated.
 - int4 does not reach the Neural Engine (placement above): on all it runs on the GPU at 27.09 ms p95, and on cpu-and-ne it falls back to the CPU at 146.46 ms.
-- Energy per window: not measured yet. It needs `bash scripts/measure_power.sh`, which runs `powermetrics` with sudo (docs/benchmarks.md).
+
+## Energy per window
+
+`bash scripts/measure_power.sh`, run by hand with sudo on 2026-10-16 with other apps closed: `powermetrics --samplers cpu_power,gpu_power,ane_power -i 500 -f plist`, 846 samples over 428 s. Each loop idled 30 s, then ran one 512-token window in a loop for 60 s. Files: `bench/results/power/*.json` (the samples used are stored in each file; the raw 22 MB plist is not committed) and the loop timestamps in `bench/results/power/loops/`.
+
+| Build | Compute units | Windows per second | Mean power in loop, CPU / GPU / ANE (mW) | mJ per window, above idle |
+|---|---|---|---|---|
+| coreml-ane fp16 | cpu-and-ne | 159.4 | 551 / 3 / 7,108 | 47.9 |
+| coreml-ane fp16 | cpu-and-gpu | 44.8 | 1,110 / 8,385 / 0 | 211.3 |
+| coreml-ane fp16 | cpu-only | 42.9 | 9,343 / 0 / 0 | 216.6 |
+| onnxruntime int8-dynamic | n/a | 13.6 | 13,601 / 14 / 0 | 986.4 |
+
+- On the Neural Engine a window costs 47.9 mJ above idle: 4.4x less than the same model on the GPU and 4.5x less than on the CPU, and 20.6x less than the fastest ONNX Runtime CPU build.
+- The parser was written before a real log existed; checked against this one: the keys are `processor.cpu_power`, `gpu_power`, and `ane_power` as assumed, each equals its `*_energy` field divided by `elapsed_ns` (so the unit is mW), and accumulated `elapsed_ns` (428.7 s) matches the timestamp span (428 s), within the 2 s edge trim.
+- Loop throughput agrees with the latency runs: 159.4 windows per second is 6.27 ms per window on the Neural Engine (latency p50 6.33 ms), and 13.6 per second is 73.5 ms for ONNX int8-dynamic (p50 75.99 ms).
+- These are the rail estimates `powermetrics` reports for CPU, GPU, and Neural Engine. They leave out DRAM and the rest of the system, and they are not a wall-power measurement.
+- Idle power differed between loops (28 to 152 mW CPU); the above-idle column subtracts each loop's own idle phase.

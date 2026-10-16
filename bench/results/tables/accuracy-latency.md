@@ -5,7 +5,7 @@ Accuracy against latency for every build. F1 is strict, overall, on the dev-test
 | torch | fp32 | n/a | 260.8 | 0.729 [0.682, 0.772] | 0.836 | reference | reference | not measured | not measured | not measured | n/a | not measured |
 | onnxruntime | fp32 | n/a | 261.8 | 0.729 [0.682, 0.772] | 0.836 | 1.0000 | 1.0000 | 30.70 / 31.84 | 67.67 / 70.00 | 156.36 / 162.63 | n/a | not measured |
 | onnxruntime | fp16 | n/a | 131.3 | 0.728 [0.681, 0.771] | 0.836 | 1.0000 | 1.0000 | 33.25 / 35.66 | 72.84 / 76.91 | 175.52 / 184.01 | n/a | not measured |
-| onnxruntime | int8-dynamic | n/a | 66.2 | 0.716 [0.662, 0.762] | 0.827 | 0.9993 | 0.9979 | 11.82 / 12.31 | 27.62 / 29.11 | 75.99 / 78.85 | n/a | not measured |
+| onnxruntime | int8-dynamic | n/a | 66.2 | 0.716 [0.662, 0.762] | 0.827 | 0.9993 | 0.9979 | 11.82 / 12.31 | 27.62 / 29.11 | 75.99 / 78.85 | n/a | 986.4 |
 | onnxruntime | int8-static | n/a | 66.5 | 0.619 [0.568, 0.673] | 0.780 | 0.9960 | 0.9886 | 14.25 / 14.78 | 32.79 / 33.69 | 87.07 / 89.85 | n/a | not measured |
 | onnxruntime | int4 | n/a | 118.3 | 0.723 [0.675, 0.766] | 0.825 | 0.9996 | 0.9989 | 33.87 / 35.71 | 77.38 / 86.86 | 184.97 / 228.17 | n/a | not measured |
 | coreml | fp16 | all | 130.5 | 0.728 [0.681, 0.771] | 0.836 | 1.0000 | 1.0000 | 27.05 / 27.36 | 53.04 / 54.59 | 117.83 / 120.27 | 0.0% of 230 | not measured |
@@ -21,9 +21,9 @@ Accuracy against latency for every build. F1 is strict, overall, on the dev-test
 | coreml | int4 | cpu-and-gpu | 36.9 | not measured | not measured | not measured | not measured | not measured | not measured | not measured | 0.0% of 235 | not measured |
 | coreml | int4 | cpu-only | 36.9 | 0.696 [0.643, 0.744] | 0.812 | 0.9994 | 0.9987 | 6.03 / 6.19 | 11.37 / 11.55 | 25.69 / 25.92 | 0.0% of 235 | not measured |
 | coreml-ane | fp16 | all | 130.6 | 0.727 [0.677, 0.769] | 0.833 | 1.0000 | 1.0000 | 1.74 / 2.20 | 2.37 / 2.44 | 6.33 / 6.38 | 98.1% of 412 | not measured |
-| coreml-ane | fp16 | cpu-and-ne | 130.6 | 0.727 [0.677, 0.769] | 0.833 | 1.0000 | 1.0000 | 1.75 / 2.79 | 2.37 / 2.44 | 6.32 / 6.38 | 98.1% of 412 | not measured |
-| coreml-ane | fp16 | cpu-and-gpu | 130.6 | not measured | not measured | not measured | not measured | not measured | not measured | not measured | 0.0% of 412 | not measured |
-| coreml-ane | fp16 | cpu-only | 130.6 | not measured | not measured | not measured | not measured | not measured | not measured | not measured | 0.0% of 412 | not measured |
+| coreml-ane | fp16 | cpu-and-ne | 130.6 | 0.727 [0.677, 0.769] | 0.833 | 1.0000 | 1.0000 | 1.75 / 2.79 | 2.37 / 2.44 | 6.32 / 6.38 | 98.1% of 412 | 47.9 |
+| coreml-ane | fp16 | cpu-and-gpu | 130.6 | not measured | not measured | not measured | not measured | not measured | not measured | not measured | 0.0% of 412 | 211.3 |
+| coreml-ane | fp16 | cpu-only | 130.6 | not measured | not measured | not measured | not measured | not measured | not measured | not measured | 0.0% of 412 | 216.6 |
 | coreml-ane | int8 | all | 65.6 | 0.724 [0.673, 0.767] | 0.830 | 1.0000 | 0.9999 | 3.34 / 4.54 | 3.81 / 4.70 | 5.45 / 5.50 | 97.1% of 416 | not measured |
 | coreml-ane | int8 | cpu-and-ne | 65.6 | 0.724 [0.673, 0.767] | 0.830 | 1.0000 | 0.9999 | 1.28 / 3.84 | 2.43 / 2.50 | 5.46 / 5.56 | 97.1% of 416 | not measured |
 | coreml-ane | int8 | cpu-and-gpu | 65.6 | not measured | not measured | not measured | not measured | not measured | not measured | not measured | 0.0% of 416 | not measured |
@@ -129,3 +129,7 @@ Sources:
 - `bench/results/placement/distilbert-int8-coreml-cpu-and-gpu.json`
 - `bench/results/placement/distilbert-int8-coreml-cpu-and-ne.json`
 - `bench/results/placement/distilbert-int8-coreml-cpu-only.json`
+- `bench/results/power/distilbert-fp16-coreml-ane-cpu-and-gpu.json`
+- `bench/results/power/distilbert-fp16-coreml-ane-cpu-and-ne.json`
+- `bench/results/power/distilbert-fp16-coreml-ane-cpu-only.json`
+- `bench/results/power/distilbert-int8-dynamic-onnxruntime.json`

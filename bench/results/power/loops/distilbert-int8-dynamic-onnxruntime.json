@@ -1,0 +1,45 @@
+{
+  "precision": "int8-dynamic",
+  "backend": "onnxruntime",
+  "compute_units": null,
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "onnxruntime",
+    "precision": "int8-dynamic",
+    "compute_units": null,
+    "path": "models/distilbert/onnx/int8-dynamic.onnx",
+    "sha256": "43b37dda2cbc12bb052d33642848421c556150f301429054b5197232c4a9b33f",
+    "size_bytes": 66234263,
+    "quantization": "INT8 weights, activations quantized per batch at run time"
+  },
+  "loop": {
+    "idle": {
+      "start": 1792185717.821341,
+      "end": 1792185747.826538
+    },
+    "inference": {
+      "start": 1792185747.826601,
+      "end": 1792185807.84517
+    },
+    "windows": 819,
+    "window_tokens": 512
+  },
+  "environment": {
+    "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "datasets": "5.1.0",
+      "seqeval": "1.2.2",
+      "onnxruntime": "1.30.0",
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
+    }
+  }
+}

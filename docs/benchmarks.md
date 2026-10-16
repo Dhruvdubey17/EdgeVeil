@@ -54,7 +54,7 @@ bash scripts/measure_power.sh
 
 The script asks for the sudo password once, starts `powermetrics --samplers cpu_power,gpu_power,ane_power -i 500 -f plist`, and runs `edgeveil bench power-loop` four times: the Neural Engine layout fp16 build on cpu-only, cpu-and-gpu, and cpu-and-ne, then ONNX Runtime int8-dynamic on the CPU. Each loop idles 30 s, then runs one 512-token window in a loop for 60 s and saves its phase timestamps under `bench/results/power/loops/`. The script then stops `powermetrics` and runs `edgeveil bench power --log <log>`, which writes `bench/results/power/<run>.json` with mean power per rail in each phase, energy per window, energy per window above idle, and the samples it used. Close other apps first, as for latency. The raw plist stays in `$TMPDIR/edgeveil-power/`.
 
-Sample times are the first plist timestamp (whole seconds) plus accumulated `elapsed_ns`, so samples within 2 s of a phase edge are left out.
+Sample times are the first plist timestamp (whole seconds) plus accumulated `elapsed_ns`, so samples within 2 s of a phase edge are left out. The parser reads `processor.cpu_power`, `gpu_power`, and `ane_power` in mW; these keys were checked against a real log on macOS 26.1.
 
 ## Xcode performance report (manual cross-check)
 
