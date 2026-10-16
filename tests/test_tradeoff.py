@@ -70,3 +70,25 @@ def test_missing_measurements_say_not_measured(tmp_path: Path) -> None:
     assert coreml[11] == NOT_MEASURED
     assert coreml[-1] == f"{NOT_MEASURED} |"
     assert coreml[6] == NOT_MEASURED
+
+
+def test_summary_compares_the_fastest_neural_engine_and_cpu_builds(
+    tmp_path: Path,
+) -> None:
+    results = tmp_path / "results"
+    tables = tmp_path / "tables"
+    tables.mkdir()
+    cpu = latency()
+    neural_engine = {
+        **latency(),
+        "backend": "coreml-ane",
+        "precision": "fp16",
+        "compute_units": "cpu-and-ne",
+        "lengths": {"512": {"p50_ms": 1.0, "p95_ms": 1.1}},
+    }
+    write(results / "latency" / "cpu.json", cpu)
+    write(results / "latency" / "ne.json", neural_engine)
+    [path] = render_tradeoff_tables(results, tables)
+    text = path.read_text()
+    assert "coreml-ane fp16 cpu-and-ne, 1.10 ms p95" in text
+    assert "onnxruntime int8-dynamic, 5.50 ms, 5.0x slower" in text

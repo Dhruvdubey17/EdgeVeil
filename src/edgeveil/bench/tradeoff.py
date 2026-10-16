@@ -1,5 +1,5 @@
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -207,6 +207,53 @@ def tradeoff_caption(collected: Mapping[BuildKey, BuildResults]) -> str:
     )
 
 
+def is_cpu_only(key: BuildKey) -> bool:
+    backend, _, units = key
+    return backend is Backend.ONNXRUNTIME or units is ComputeUnits.CPU_ONLY
+
+
+def is_neural_engine_only(key: BuildKey) -> bool:
+    return key[2] is ComputeUnits.CPU_AND_NE
+
+
+def p95_at_longest(results: BuildResults) -> float | None:
+    if results.latency is None:
+        return None
+    timing = results.latency["lengths"].get(LATENCY_LENGTHS[-1])
+    return None if timing is None else timing["p95_ms"]
+
+
+def fastest(
+    collected: Mapping[BuildKey, BuildResults], is_member: Callable[[BuildKey], bool]
+) -> tuple[BuildKey, float] | None:
+    timed = [
+        (key, p95)
+        for key, results in collected.items()
+        if is_member(key) and (p95 := p95_at_longest(results)) is not None
+    ]
+    return min(timed, key=lambda item: item[1], default=None)
+
+
+def build_label(key: BuildKey) -> str:
+    backend, precision, units = key
+    suffix = "" if units is None else f" {units.value}"
+    return f"{backend.value} {precision.value}{suffix}"
+
+
+def baseline_summary(collected: Mapping[BuildKey, BuildResults]) -> str:
+    neural_engine = fastest(collected, is_neural_engine_only)
+    cpu = fastest(collected, is_cpu_only)
+    if neural_engine is None or cpu is None:
+        return "Fastest Neural Engine and CPU-only builds: not measured."
+    (ne_key, ne_p95), (cpu_key, cpu_p95) = neural_engine, cpu
+    return (
+        f"Fastest build with compute units cpu-and-ne: {build_label(ne_key)}, "
+        f"{ne_p95:.2f} ms p95 at {LATENCY_LENGTHS[-1]} tokens. Fastest CPU-only "
+        f"build: {build_label(cpu_key)}, {cpu_p95:.2f} ms, "
+        f"{cpu_p95 / ne_p95:.1f}x slower."
+    )
+
+
 def tradeoff_table(collected: Mapping[BuildKey, BuildResults]) -> str:
     keys = sorted(collected, key=sort_key)
     rows = [tradeoff_row(key, collected[key]) for key in keys]
@@ -217,6 +264,7 @@ def tradeoff_table(collected: Mapping[BuildKey, BuildResults]) -> str:
             [
                 tradeoff_caption(collected),
                 markdown_table(TRADEOFF_COLUMNS, rows),
+                baseline_summary(collected),
                 f"Sources:\n\n{listed}",
             ]
         )
