@@ -3,6 +3,7 @@
   "preset": "distilbert",
   "model_dir": "models/distilbert",
   "model_sha256": "c0eafef1bf82eec0c88765986160ff0874b2a74812e717fb4918a5549b502c06",
+  "thresholds_sha256": "6d2804910f9e2c0c5c802aa33bc5da1f5f055924a2698bca31a4a5e27348a39a",
   "base_model": "distilbert/distilbert-base-cased",
   "base_model_revision": "6ea81172465e8b0ad3fddeed32b986cdcdcffcf0",
   "training_dataset_revision": "a785eb528e28be2693c3718a27e066970de5dadb",
@@ -11,13 +12,13 @@
   "backend": "torch",
   "test_set": {
     "path": "data/test/test_set.jsonl",
-    "sha256": "e610bd2e4c19b9a67ade77c8c8443f0ec4e8f1f2deace2a61005392ea49c975f",
+    "sha256": "b55e26ee4db2d7a1d75276962cd0cc79ff49a1ffbd66c40c41827db62f9e0247",
     "snippets": 235,
     "spans_by_type": {
       "ADDRESS": 47,
       "CREDENTIAL": 40,
-      "CREDIT_CARD": 41,
-      "EMAIL": 45,
+      "CREDIT_CARD": 40,
+      "EMAIL": 43,
       "GOV_ID": 43,
       "PERSON": 75,
       "PHONE": 42,
@@ -49,90 +50,90 @@
   "scores": {
     "PERSON": {
       "precision": {
-        "value": 0.8734,
-        "low": 0.7952,
-        "high": 0.9425
+        "value": 0.9241,
+        "low": 0.8648,
+        "high": 0.9759
       },
       "recall": {
-        "value": 0.92,
-        "low": 0.8429,
-        "high": 0.9853
+        "value": 0.9733,
+        "low": 0.9315,
+        "high": 1.0
       },
       "f1": {
-        "value": 0.8961,
-        "low": 0.8252,
-        "high": 0.956
+        "value": 0.9481,
+        "low": 0.9043,
+        "high": 0.9838
       },
       "support": 75
     },
     "EMAIL": {
       "precision": {
-        "value": 0.8333,
-        "low": 0.7059,
-        "high": 0.9524
+        "value": 0.9024,
+        "low": 0.7878,
+        "high": 1.0
       },
       "recall": {
-        "value": 0.7778,
-        "low": 0.6499,
-        "high": 0.9
+        "value": 0.8605,
+        "low": 0.75,
+        "high": 0.9574
       },
       "f1": {
-        "value": 0.8046,
-        "low": 0.6889,
-        "high": 0.9176
+        "value": 0.881,
+        "low": 0.7727,
+        "high": 0.9714
       },
-      "support": 45
+      "support": 43
     },
     "PHONE": {
       "precision": {
-        "value": 0.5161,
-        "low": 0.375,
-        "high": 0.6377
+        "value": 0.5323,
+        "low": 0.4029,
+        "high": 0.6607
       },
       "recall": {
-        "value": 0.7619,
-        "low": 0.6304,
-        "high": 0.8889
+        "value": 0.7857,
+        "low": 0.6571,
+        "high": 0.9091
       },
       "f1": {
-        "value": 0.6154,
-        "low": 0.48,
-        "high": 0.7217
+        "value": 0.6346,
+        "low": 0.5057,
+        "high": 0.7359
       },
       "support": 42
     },
     "ADDRESS": {
       "precision": {
-        "value": 0.4744,
-        "low": 0.3589,
-        "high": 0.6081
+        "value": 0.4872,
+        "low": 0.367,
+        "high": 0.6212
       },
       "recall": {
-        "value": 0.7872,
-        "low": 0.66,
-        "high": 0.9
+        "value": 0.8085,
+        "low": 0.6977,
+        "high": 0.92
       },
       "f1": {
-        "value": 0.592,
-        "low": 0.4662,
-        "high": 0.7131
+        "value": 0.608,
+        "low": 0.4812,
+        "high": 0.7321
       },
       "support": 47
     },
     "CREDENTIAL": {
       "precision": {
         "value": 0.7143,
-        "low": 0.5587,
-        "high": 0.8696
+        "low": 0.5554,
+        "high": 0.8621
       },
       "recall": {
         "value": 0.5,
-        "low": 0.3462,
-        "high": 0.6487
+        "low": 0.35,
+        "high": 0.6586
       },
       "f1": {
         "value": 0.5882,
-        "low": 0.4313,
+        "low": 0.4407,
         "high": 0.7273
       },
       "support": 40
@@ -162,52 +163,52 @@
         "high": 1.0
       },
       "recall": {
-        "value": 0.2927,
-        "low": 0.15,
-        "high": 0.4387
+        "value": 0.3,
+        "low": 0.1538,
+        "high": 0.4474
       },
       "f1": {
-        "value": 0.4528,
-        "low": 0.2608,
-        "high": 0.6098
+        "value": 0.4615,
+        "low": 0.2666,
+        "high": 0.6182
       },
-      "support": 41
+      "support": 40
     },
     "GOV_ID": {
       "precision": {
-        "value": 0.6042,
-        "low": 0.4444,
-        "high": 0.7551
+        "value": 0.625,
+        "low": 0.4737,
+        "high": 0.775
       },
       "recall": {
-        "value": 0.6744,
-        "low": 0.5207,
-        "high": 0.8125
+        "value": 0.6977,
+        "low": 0.5435,
+        "high": 0.8293
       },
       "f1": {
-        "value": 0.6374,
-        "low": 0.4884,
-        "high": 0.7568
+        "value": 0.6593,
+        "low": 0.5263,
+        "high": 0.7693
       },
       "support": 43
     },
     "overall": {
       "precision": {
-        "value": 0.6773,
-        "low": 0.6232,
-        "high": 0.7265
+        "value": 0.7012,
+        "low": 0.6504,
+        "high": 0.7489
       },
       "recall": {
-        "value": 0.7294,
-        "low": 0.6787,
-        "high": 0.7763
+        "value": 0.7594,
+        "low": 0.7114,
+        "high": 0.8021
       },
       "f1": {
-        "value": 0.7024,
-        "low": 0.6517,
-        "high": 0.7484
+        "value": 0.7291,
+        "low": 0.6816,
+        "high": 0.7719
       },
-      "support": 377
+      "support": 374
     }
   },
   "secondary_scores": {
@@ -219,13 +220,13 @@
       },
       "overlap_recall": {
         "value": 0.9867,
-        "low": 0.9535,
+        "low": 0.954,
         "high": 1.0
       },
       "char_recall": {
-        "value": 0.9725,
-        "low": 0.9348,
-        "high": 0.9977
+        "value": 0.9849,
+        "low": 0.9461,
+        "high": 1.0
       }
     },
     "EMAIL": {
@@ -235,14 +236,14 @@
         "high": 1.0
       },
       "overlap_recall": {
-        "value": 0.8889,
-        "low": 0.7804,
-        "high": 0.975
+        "value": 0.9302,
+        "low": 0.8444,
+        "high": 1.0
       },
       "char_recall": {
-        "value": 0.9072,
-        "low": 0.8305,
-        "high": 0.9724
+        "value": 0.9166,
+        "low": 0.8326,
+        "high": 0.9809
       }
     },
     "PHONE": {
@@ -257,26 +258,26 @@
         "high": 0.919
       },
       "char_recall": {
-        "value": 0.9138,
-        "low": 0.8342,
-        "high": 0.9716
+        "value": 0.9183,
+        "low": 0.8377,
+        "high": 0.9764
       }
     },
     "ADDRESS": {
       "overlap_precision": {
-        "value": 0.6795,
-        "low": 0.5647,
-        "high": 0.789
+        "value": 0.7179,
+        "low": 0.6067,
+        "high": 0.8171
       },
       "overlap_recall": {
-        "value": 0.9362,
-        "low": 0.8611,
+        "value": 0.9787,
+        "low": 0.9302,
         "high": 1.0
       },
       "char_recall": {
-        "value": 0.9568,
-        "low": 0.9213,
-        "high": 0.9848
+        "value": 0.9647,
+        "low": 0.937,
+        "high": 0.9886
       }
     },
     "CREDENTIAL": {
@@ -291,9 +292,9 @@
         "high": 0.7956
       },
       "char_recall": {
-        "value": 0.759,
-        "low": 0.6211,
-        "high": 0.8845
+        "value": 0.7636,
+        "low": 0.6247,
+        "high": 0.8913
       }
     },
     "SSN": {
@@ -320,21 +321,21 @@
         "high": 1.0
       },
       "overlap_recall": {
-        "value": 0.2927,
-        "low": 0.15,
-        "high": 0.4387
+        "value": 0.3,
+        "low": 0.1538,
+        "high": 0.4474
       },
       "char_recall": {
-        "value": 0.9123,
-        "low": 0.839,
-        "high": 0.9797
+        "value": 0.9118,
+        "low": 0.8386,
+        "high": 0.9795
       }
     },
     "GOV_ID": {
       "overlap_precision": {
-        "value": 0.75,
-        "low": 0.5999,
-        "high": 0.8839
+        "value": 0.7292,
+        "low": 0.5714,
+        "high": 0.8718
       },
       "overlap_recall": {
         "value": 0.7907,
@@ -342,26 +343,26 @@
         "high": 0.9024
       },
       "char_recall": {
-        "value": 0.8735,
-        "low": 0.786,
-        "high": 0.9525
+        "value": 0.8798,
+        "low": 0.7901,
+        "high": 0.96
       }
     },
     "overall": {
       "overlap_precision": {
-        "value": 0.7882,
-        "low": 0.7397,
-        "high": 0.8292
+        "value": 0.7926,
+        "low": 0.745,
+        "high": 0.8349
       },
       "overlap_recall": {
-        "value": 0.8117,
-        "low": 0.7683,
-        "high": 0.8499
+        "value": 0.8235,
+        "low": 0.7824,
+        "high": 0.8603
       },
       "char_recall": {
-        "value": 0.9107,
-        "low": 0.882,
-        "high": 0.937
+        "value": 0.9178,
+        "low": 0.8894,
+        "high": 0.944
       }
     }
   },
@@ -369,22 +370,22 @@
     "misses": {
       "PERSON": {
         "missed": 1,
-        "boundary": 5,
+        "boundary": 1,
         "wrong_type": 0
       },
       "EMAIL": {
         "missed": 3,
-        "boundary": 5,
-        "wrong_type": 2
+        "boundary": 3,
+        "wrong_type": 0
       },
       "PHONE": {
         "missed": 1,
-        "boundary": 2,
+        "boundary": 1,
         "wrong_type": 7
       },
       "ADDRESS": {
-        "missed": 3,
-        "boundary": 7,
+        "missed": 1,
+        "boundary": 8,
         "wrong_type": 0
       },
       "CREDENTIAL": {
@@ -400,34 +401,34 @@
       "CREDIT_CARD": {
         "missed": 2,
         "boundary": 0,
-        "wrong_type": 27
+        "wrong_type": 26
       },
       "GOV_ID": {
         "missed": 2,
-        "boundary": 5,
+        "boundary": 4,
         "wrong_type": 7
       }
     },
     "false_positives": {
       "PERSON": {
         "spurious": 5,
-        "boundary": 5,
+        "boundary": 1,
         "wrong_type": 0
       },
       "EMAIL": {
         "spurious": 0,
-        "boundary": 7,
+        "boundary": 4,
         "wrong_type": 0
       },
       "PHONE": {
         "spurious": 0,
-        "boundary": 3,
+        "boundary": 2,
         "wrong_type": 27
       },
       "ADDRESS": {
-        "spurious": 17,
-        "boundary": 16,
-        "wrong_type": 8
+        "spurious": 18,
+        "boundary": 18,
+        "wrong_type": 4
       },
       "CREDENTIAL": {
         "spurious": 2,
@@ -445,8 +446,8 @@
         "wrong_type": 0
       },
       "GOV_ID": {
-        "spurious": 5,
-        "boundary": 7,
+        "spurious": 6,
+        "boundary": 5,
         "wrong_type": 7
       }
     }
