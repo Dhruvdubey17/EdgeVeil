@@ -113,8 +113,9 @@ Fine-tuning runs on a Kaggle GPU, not on the M3. The full two-epoch run on the M
 ## Thresholds and decoding
 
 - `edgeveil.detector.decoding` is the one function from logits to spans that every backend uses. For each token, the entity mass of a type is P(B-type) + P(I-type). The token takes the type with the highest mass if that mass exceeds P(O); otherwise it is O. B or I follows whichever of the two has more probability. Tokens are decoded into spans, a span's score is the mean entity mass of its tokens, and the span is kept only if that score reaches its type's threshold. Until 2026-10-15 the threshold was applied to each token, which split a span wherever one inner token dipped below it; the test set exposed this (see the first test-set evaluation below).
-- Spans from overlapping windows merge by character offsets. Overlapping spans of the same type join into one that covers both and keeps the higher score. Overlapping spans of different types keep the higher-scoring one. Spans that only touch stay separate.
-- `edgeveil tune-thresholds` sweeps one threshold for all types over `THRESHOLD_GRID` (0.05 to 0.95 in steps of 0.05) on validation, scores the emitted spans per type, and picks the threshold with the highest F-beta, `THRESHOLD_BETA = 2.0`, per type. With beta 2, recall counts twice as much as precision (beta squared, 4, weights precision in the denominator), because a missed secret costs more than an extra placeholder. Ties go to the lower threshold. Sweeping one value for all types is equivalent to sweeping each type on its own: which tokens form a span, and of which type, does not depend on any threshold, so a type's threshold only decides whether that type's spans are kept.
+- Within a window, decoded spans of the same type with zero characters between them join into one span before the threshold check, so the type threshold sees the whole value (`rohan.` and `iyer@example.com` become one EMAIL). Until 2026-10-16 a B tag after a touching span of the same type started a new span.
+- Spans from overlapping windows merge by character offsets. Overlapping or touching spans of the same type join into one that covers both and keeps the higher score. Where spans of different types overlap, the higher-scoring span wins the overlap and the rest of the other span stays masked under its own type, snapped to whole tokens. Until 2026-10-16 the lower-scoring span was dropped whole, which unmasked its characters outside the overlap. Spans of different types that only touch stay separate.
+- `edgeveil tune-thresholds` sweeps one threshold for all types over `THRESHOLD_GRID` (0.05 to 0.95 in steps of 0.05) on validation, scores the emitted spans per type, and picks the threshold with the highest F-beta, `THRESHOLD_BETA = 2.0`, per type. With beta 2, recall counts twice as much as precision (beta squared, 4, weights precision in the denominator), because a missed secret costs more than an extra placeholder. Ties go to the lower threshold. Sweeping one value for all types is equivalent to sweeping each type on its own: which tokens form a span, and of which type, does not depend on any threshold, so a type's threshold only decides whether that type's spans are kept. One exception since 2026-10-16: where two windows disagree on the type of an overlap, whether the other type's span survives its threshold decides how much of this type's span it takes, so the equivalence holds everywhere except at such window overlaps.
 - Scoring uses the final spans the product emits, after thresholds and merging, re-encoded as IOB2 over each text's tokens and scored with strict seqeval. The test-set evaluation will use the same function.
 - Results go to `bench/results/thresholds/<preset>-fp32-torch.json` with the chosen threshold, precision, recall, F2, and support per type, the full curve, the model and dataset revisions, and the chip, OS, and library versions.
 
@@ -155,7 +156,7 @@ OpenPII has no password, key, or token labels, so CREDENTIAL training data is sy
 
 ## The dev-test set
 
-From 2026-10-16 the 235 hand-labeled snippets in `data/test/test_set.jsonl` are called the dev-test set. They informed fixes: the first evaluation led to email domain rewriting and span-level thresholds, and the error analysis below shaped the validators and the combiner rules. Scores on the dev-test set are therefore optimistic and are not the number the README reports. Before publication, about 100 fresh snippets are written under the same rules in `docs/labeling.md`, labeled, and scored once, and the README reports that run.
+From 2026-10-16 the 235 hand-labeled snippets in `data/test/test_set.jsonl` are called the dev-test set. They informed fixes: the first evaluation led to email domain rewriting and span-level thresholds, and the error analysis below shaped the validators, the combiner rules, the decoding change for touching spans, the never-unmask merge across windows, the threshold retune that followed it, and the label corrections. Scores on the dev-test set are therefore optimistic and are not the number the README reports. Before publication, about 100 fresh snippets are written under the same rules in `docs/labeling.md`, labeled, and scored once, and the README reports that run.
 
 ## Frozen v1 checkpoint
 
@@ -180,7 +181,7 @@ On the dev-test set (model only, 2026-10-16) the 102 misses split into 25 missed
 - GOV_ID: 7 wrong-type misses, mostly tax and national insurance numbers tagged SSN.
 - EMAIL: 5 boundary misses, each splitting the local part at a period.
 
-The listing also shows gold spans that break `docs/labeling.md`: two addresses labeled EMAIL (snippets 103 and 144), titles inside PERSON (113, 231), a comma-joined name (64), a name split at `d/o` (133), and a partial card number (87). They are left as labeled and counted as they are.
+The listing also shows gold spans that break `docs/labeling.md`: two addresses labeled EMAIL (snippets 103 and 144), titles inside PERSON (113, 231), a comma-joined name (64), a name split at `d/o` (133), and a partial card number (87). They were later fixed through the label lint and corrections (see Label corrections below); the counts in this section are from before the fix.
 
 ## Secondary metrics
 
@@ -200,25 +201,117 @@ Pulled forward from week 3. `edgeveil.validators.finders` has four pure function
 - Phone: a fixed set of shapes (NANP with optional `+1` and parentheses, a 7-digit local number, `+` country code with groups, and national numbers with a leading 0), 7 to 15 digits. SSN, date, version, and price shapes do not match.
 - Credentials: runs of 20 or more key characters with upper case, lower case, and digits, at least 3.5 bits of entropy per character, not hex only (commit SHAs, UUIDs, checksums), and not a path.
 
-Validator spans that overlap each other are resolved by priority: email, card, phone, credential. `edgeveil.validators.combiner.combine_spans` holds every rule for merging model and validator spans:
+Validator spans that overlap each other are resolved by priority: email, card, phone, credential. `edgeveil.validators.combiner.combine_spans` holds every rule for merging model and validator spans. Two requirements come first:
 
-- Veto: a model CREDIT_CARD span that fails the card check (Luhn, 13 to 19 digits) and a model PHONE span with fewer than 7 digits are dropped.
-- Same type: the validator span replaces any overlapping model span, because regex edges follow the labeling rules exactly.
-- Different type: a model span that strictly contains the validator span wins, since it already masks the value. A model span inside the validator span is dropped. A model span that only partly overlaps keeps the part outside the validator span, trimmed of whitespace. The first version dropped such spans, which unmasked a name next to an email on the dev-test set; trimming means the combiner never unmasks model-masked text except through a veto.
+- Never unmask. Every model span is emitted above its type threshold, and the combiner never removes the mask from any of its characters. A format check that fails (a veto) can only let a validator change the type of those characters. The spec puts recall first, so this is a requirement, not a choice tuned on the dev-test set. A property test checks that every non-whitespace character a model span covers is still covered after combining, and that the combiner covers nothing that neither side emitted.
+- An accepted validator span owns its characters. Model spans that overlap it keep the parts outside it, trimmed of whitespace, under the model's type. A card inside a model ADDRESS span therefore splits it into ADDRESS, CREDIT_CARD, ADDRESS.
 
-The validators and the trimming rule were written after the error analysis above, so validator and combined scores on the dev-test set are optimistic like the model scores.
+Format checks on model spans (the vetoes):
 
-Ablation on the dev-test set (2026-10-16), strict F1 [95% CI]:
+| Model type | Format check |
+|---|---|
+| CREDIT_CARD | Luhn-valid, 13 to 19 digits |
+| PHONE | 7 to 15 digits |
+| SSN | only digits, spaces, and dashes, with 9 digits (full) or 4 (partial) |
+| EMAIL | matches the strict email pattern |
+| PERSON, ADDRESS, CREDENTIAL, GOV_ID | none, always passes |
 
-| | Model only | Validators only | Both |
+Precedence when a validator span overlaps model spans:
+
+| Validator | Overlapping model span | Result |
+|---|---|---|
+| Card (Luhn) or email | none | validator span added |
+| Card (Luhn) or email | any type | validator type and edges win; model parts outside stay masked |
+| Phone or entropy | none | validator span added |
+| Phone or entropy | same type | validator edges win; model parts outside stay masked |
+| Phone or entropy | other type that fails its format check | validator relabels the overlap; model parts outside stay masked |
+| Phone or entropy | other type that passes its format check | validator span dropped; model span unchanged |
+
+A phone or entropy span is accepted only if every model span it overlaps allows it. A model span that fails its check with no validator over it keeps its type and its mask.
+
+The validators were written after the error analysis above, and the precedence rules after the first ablation, so validator and combined scores on the dev-test set are optimistic like the model scores.
+
+The first ablation (2026-10-16, before the never-unmask rules and the label corrections) gave overall strict F1 of 0.702 for the model, 0.519 for validators, and 0.810 for both. Its combiner dropped model spans that failed a format check, which unmasked one GOV_ID fragment, and let the phone validator replace two correct GOV_ID spans. Both are gone under the current rules. Current numbers are in the rerun section below.
+
+## Label corrections
+
+Gold labels are never edited by hand. `edgeveil data import-labels` converts the untouched Label Studio exports (copies in `data/test/exports/`), applies `data/test/corrections.jsonl`, and then runs the label lint described in `docs/labeling.md`. It writes nothing if a correction no longer matches or a check fails. The lint is derived only from the labeling rules, never from model output, and stays in the import so the fresh held-out set is checked the same way before it is scored.
+
+The lint ran over all 235 dev-test snippets on 2026-10-16 and the user approved every change:
+
+- Nine mechanical fixes: a scheme word (`Basic`) and two ID-type words (`DL`, `CDL`) moved out of spans (snippets 19, 131, 146), titles moved out of PERSON (113, 231), a comma-joined name split (64), a name split at `d/o` joined (133), a partial card number unlabeled (87), and parentheses around a whole phone number moved out (204).
+- Four reviewer decisions on checks the rules cannot settle: two addresses labeled EMAIL relabeled ADDRESS over the whole span (103, 144) and two lone cities unlabeled (137, 154).
+- One one-off reviewer decision outside the lint: the trailing `&` (a URL query separator) trimmed from a token (31). It is not a lint rule, because real passwords can end in punctuation.
+
+The dev-test set went from 377 to 374 spans: CREDIT_CARD 41 to 40 and EMAIL 45 to 43; ADDRESS stays 47 (two added, two removed) and PERSON stays 75 (one split, one join). The error analysis prompted these corrections, so they are informed by the dev-test set.
+
+## Threshold retune after the decoding change
+
+Joining touching spans changes which spans reach the threshold check, so thresholds were retuned on validation on 2026-10-16 with the same grid and F2, keeping the v1 checkpoint. Every type kept its threshold:
+
+| Type | Old | New | Validation recall, old to new |
 |---|---|---|---|
-| EMAIL | 0.805 [0.689, 0.918] | 0.956 [0.905, 0.990] | 0.956 [0.905, 0.990] |
-| PHONE | 0.615 [0.480, 0.722] | 0.941 [0.875, 0.988] | 0.899 [0.816, 0.959] |
-| CREDENTIAL | 0.588 [0.431, 0.727] | 0.436 [0.245, 0.600] | 0.618 [0.455, 0.741] |
-| CREDIT_CARD | 0.453 [0.261, 0.610] | 0.988 [0.957, 1.000] | 0.988 [0.957, 1.000] |
-| overall | 0.702 [0.652, 0.748] | 0.519 [0.470, 0.569] | 0.810 [0.769, 0.850] |
+| PERSON | 0.80 | 0.80 | 0.994 to 0.993 |
+| EMAIL | 0.95 | 0.95 | 0.999 to 0.999 |
+| PHONE | 0.75 | 0.75 | 0.996 to 0.996 |
+| ADDRESS | 0.85 | 0.85 | 0.986 to 0.985 |
+| CREDENTIAL | 0.95 | 0.95 | 0.831 to 0.833 |
+| SSN | 0.55 | 0.55 | 0.971 to 0.971 |
+| CREDIT_CARD | 0.65 | 0.65 | 0.998 to 0.998 |
+| GOV_ID | 0.55 | 0.55 | 0.979 to 0.979 |
 
-- PHONE is lower with both than with validators alone because of 6 wrong-type false positives on SSN and GOV_ID values. Four are model PHONE spans that no validator overlaps. Two come from the phone validator's leading-0 national shape, which matches the ID card numbers `0000 1111 2222` style (snippets 133 and 154) and replaces the model's correct GOV_ID spans there. Those values stay masked, under the wrong placeholder.
-- GOV_ID F1 moves from 0.637 to 0.658, and wrong-type misses rise from 7 to 9 for the same two snippets.
-- The PHONE veto drops a 6-digit model PHONE fragment inside a driver's license number (snippet 139), which lowers GOV_ID char recall from 0.873 to 0.857. This is the one place the combiner unmasks text.
+The old file is kept at `bench/results/thresholds/baseline/distilbert-fp32-torch-2026-10-16.json`. Every accuracy result file records `thresholds_sha256` next to `model_sha256`; the current thresholds file has SHA-256 `6d2804910f9e2c0c5c802aa33bc5da1f5f055924a2698bca31a4a5e27348a39a`. The decoding change and the retune were prompted by the dev-test error analysis, so they are informed by the dev-test set, although the retune itself used validation only.
+
+## Rerun after corrections (2026-10-16)
+
+v1 with the retuned thresholds, current decoding and combiner, on the corrected dev-test set (235 snippets, 374 spans). Every change in this rerun was informed by the dev-test set, so these scores are optimistic.
+
+Ablation, strict F1 [95% CI]:
+
+| Type | Model only | Validators only | Both |
+|---|---|---|---|
+| PERSON | 0.948 [0.904, 0.984] | 0.000 | 0.961 [0.925, 0.987] |
+| EMAIL | 0.881 [0.773, 0.971] | 0.977 [0.940, 1.000] | 0.977 [0.940, 1.000] |
+| PHONE | 0.635 [0.506, 0.736] | 0.941 [0.875, 0.988] | 0.897 [0.809, 0.966] |
+| ADDRESS | 0.608 [0.481, 0.732] | 0.000 | 0.608 [0.481, 0.732] |
+| CREDENTIAL | 0.588 [0.441, 0.727] | 0.509 [0.333, 0.654] | 0.657 [0.529, 0.763] |
+| SSN | 0.812 [0.718, 0.886] | 0.000 | 0.845 [0.757, 0.915] |
+| CREDIT_CARD | 0.462 [0.267, 0.618] | 1.000 [1.000, 1.000] | 1.000 [1.000, 1.000] |
+| GOV_ID | 0.659 [0.526, 0.769] | 0.000 | 0.714 [0.571, 0.828] |
+| overall | 0.729 [0.682, 0.772] | 0.530 [0.481, 0.580] | 0.836 [0.801, 0.869] |
+
+Overall recall is 0.759 for the model, 0.366 for validators, and 0.877 for both. Overall char recall is 0.918 for the model and 0.950 for both, and no type's char recall is lower with both than with the model alone.
+
+Model only, strict errors:
+
+| Type | Missed | Boundary miss | Wrong-type miss | Spurious FP | Boundary FP | Wrong-type FP |
+|---|---|---|---|---|---|---|
+| PERSON | 1 | 1 | 0 | 5 | 1 | 0 |
+| EMAIL | 3 | 3 | 0 | 0 | 4 | 0 |
+| PHONE | 1 | 1 | 7 | 0 | 2 | 27 |
+| ADDRESS | 1 | 8 | 0 | 18 | 18 | 4 |
+| CREDENTIAL | 11 | 6 | 3 | 2 | 6 | 0 |
+| SSN | 2 | 1 | 0 | 5 | 1 | 10 |
+| CREDIT_CARD | 2 | 0 | 26 | 0 | 0 | 0 |
+| GOV_ID | 2 | 4 | 7 | 6 | 5 | 7 |
+| overall | 23 | 24 | 43 | 36 | 37 | 48 |
+
+Model and validators, strict errors:
+
+| Type | Missed | Boundary miss | Wrong-type miss | Spurious FP | Boundary FP | Wrong-type FP |
+|---|---|---|---|---|---|---|
+| PERSON | 1 | 0 | 0 | 5 | 0 | 0 |
+| EMAIL | 0 | 0 | 0 | 0 | 0 | 2 |
+| PHONE | 0 | 2 | 1 | 0 | 2 | 4 |
+| ADDRESS | 1 | 8 | 0 | 18 | 18 | 4 |
+| CREDENTIAL | 10 | 2 | 5 | 5 | 2 | 0 |
+| SSN | 2 | 1 | 0 | 5 | 1 | 6 |
+| CREDIT_CARD | 0 | 0 | 0 | 0 | 0 | 0 |
+| GOV_ID | 2 | 4 | 7 | 6 | 5 | 0 |
+| overall | 16 | 17 | 13 | 39 | 28 | 16 |
+
+- Model only moved from 0.702 to 0.729 overall. Scoring the current code on the uncorrected labels gives 0.708, so the decoding change accounts for about 0.006 (EMAIL 0.805 to 0.861, from local parts no longer split at a period) and the label corrections for the rest.
+- The never-unmask rules cost strict precision in a few places, all still masked. The phone validator cannot relabel a model ADDRESS fragment (`55` in `555-0119`, snippets 207 and 214) because ADDRESS has no format check, so the number ends up as an ADDRESS fragment plus a PHONE piece. Model CREDENTIAL characters outside a validator token stay masked as their own spans (`-u ci-bot -p`, a trailing `&`), which adds spurious CREDENTIAL false positives.
+- The entropy validator flags a base64 PNG in a data URI (snippet 181), a hard negative.
+- PHONE recall with both (0.929) is below validators alone (0.952) for the same reason: a model ADDRESS span over part of a phone number blocks the phone validator there (snippets 207 and 214, and 231, where the ADDRESS span starts at the phone number).
 - Full tables: `bench/results/tables/ablation-distilbert-fp32-torch.md` and the three `accuracy-*.md` files.
