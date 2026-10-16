@@ -13,6 +13,9 @@ DEFAULT_MODELS_DIR = Path("models")
 DEFAULT_RESULTS_DIR = Path("bench") / "results"
 COOLDOWN_SECONDS = 60
 BENCH_TEXT_ROWS = 50
+POWER_LOOP_SECONDS = 60
+POWER_IDLE_SECONDS = 30
+POWER_WINDOW_TOKENS = 512
 USAGE_EXIT_CODE = 2
 
 bench_app = typer.Typer(
@@ -180,3 +183,90 @@ def placement(
                 f"{name}: {report.neural_engine_share:.1%} of {report.operations} "
                 f"operations prefer the Neural Engine. Saved {path}."
             )
+
+
+@bench_app.command(
+    name="power-loop",
+    help="Idle, then run one 512-token window in a loop for a fixed time, and "
+    "save the phase timestamps. Run it while powermetrics records; see "
+    "docs/benchmarks.md.",
+)
+def power_loop(
+    backend: Annotated[Backend, typer.Option(help="Backend to run.")],
+    precision: Annotated[Precision, typer.Option(help="Build to run.")],
+    compute_units: Annotated[
+        ComputeUnits, typer.Option(help="Core ML compute units.")
+    ] = ComputeUnits.ALL,
+    seconds: Annotated[
+        int, typer.Option(help="Length of the inference loop.")
+    ] = POWER_LOOP_SECONDS,
+    idle_seconds: Annotated[
+        int, typer.Option(help="Idle time measured before the loop.")
+    ] = POWER_IDLE_SECONDS,
+    preset: PresetOption = ModelPreset.DISTILBERT,
+    models_dir: ModelsDir = DEFAULT_MODELS_DIR,
+    data_dir: Annotated[
+        Path, typer.Option(help="Directory with prepared data, for bench text.")
+    ] = DEFAULT_DATA_DIR,
+    results_dir: ResultsDir = DEFAULT_RESULTS_DIR,
+) -> None:
+    from edgeveil.bench.latency import bench_windows
+    from edgeveil.bench.power import run_power_loop, write_power_loop
+    from edgeveil.detector.builds import build_record, load_detector, run_name
+    from edgeveil.detector.windows import load_tokenizer
+    from edgeveil.evaluation.thresholds import load_tuning_rows
+
+    model_dir = models_dir / preset.value
+    [precision] = built_precisions(model_dir, backend, [precision])
+    texts = [row.text for row in load_tuning_rows(data_dir, BENCH_TEXT_ROWS)]
+    window = bench_windows(load_tokenizer(model_dir), texts, (POWER_WINDOW_TOKENS,))
+    detector = load_detector(model_dir, backend, precision, compute_units=compute_units)
+    loop = run_power_loop(
+        detector.window_logits, window[POWER_WINDOW_TOKENS], seconds, idle_seconds
+    )
+    name = run_name(preset.value, backend, precision, compute_units)
+    path = results_dir / "power" / "loops" / f"{name}.json"
+    write_power_loop(
+        loop, build_record(model_dir, backend, precision, compute_units), path
+    )
+    console.print(
+        f"{name}: {loop.windows} windows in {loop.inference.seconds:.1f} s. "
+        f"Saved {path}."
+    )
+
+
+@bench_app.command(
+    help="Turn a powermetrics plist log into energy per 512-token window for "
+    "every power loop that ran inside it, and save one result per build."
+)
+def power(
+    log: Annotated[
+        Path, typer.Option(help="powermetrics output written with -f plist.")
+    ],
+    results_dir: ResultsDir = DEFAULT_RESULTS_DIR,
+) -> None:
+    import json
+
+    from edgeveil.bench.power import (
+        NoSamplesInPhaseError,
+        energy_report,
+        read_power_loop,
+        read_powermetrics_plist,
+        write_power_results,
+    )
+
+    samples = read_powermetrics_plist(log)
+    for loop_path in sorted((results_dir / "power" / "loops").glob("*.json")):
+        payload = json.loads(loop_path.read_text())
+        try:
+            report = energy_report(samples, read_power_loop(payload))
+        except NoSamplesInPhaseError:
+            console.print(f"{loop_path.name}: not inside this log, skipped.")
+            continue
+        path = results_dir / "power" / loop_path.name
+        write_power_results(report, payload, log, samples, path)
+        total = report.millijoules_per_window_above_idle["total"]
+        console.print(
+            f"{loop_path.stem}: {total:.1f} mJ per window above idle, "
+            f"{report.windows_per_second:.1f} windows/s. Saved {path}."
+        )

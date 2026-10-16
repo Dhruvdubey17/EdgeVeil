@@ -59,12 +59,14 @@ def test_rows_join_accuracy_and_latency_for_the_same_build(tmp_path: Path) -> No
     assert onnx[1:4] == ["int8-dynamic", "n/a", "66.2"]
     assert onnx[4] == "0.700 [0.650, 0.750]"
     assert onnx[8] == "4.25 / 5.50"
-    assert onnx[-1] == "n/a |"
+    assert onnx[11] == "n/a"
+    assert onnx[-1] == f"{NOT_MEASURED} |"
 
 
 def test_missing_measurements_say_not_measured(tmp_path: Path) -> None:
     coreml = rendered_rows(tmp_path)["coreml"]
     assert coreml[1:3] == ["int4", "all"]
     assert coreml[8] == NOT_MEASURED
+    assert coreml[11] == NOT_MEASURED
     assert coreml[-1] == f"{NOT_MEASURED} |"
     assert coreml[6] == NOT_MEASURED

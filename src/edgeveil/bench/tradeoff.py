@@ -11,6 +11,7 @@ ACCURACY_DIR_NAME = "accuracy"
 PARITY_DIR_NAME = "parity"
 LATENCY_DIR_NAME = "latency"
 PLACEMENT_DIR_NAME = "placement"
+POWER_DIR_NAME = "power"
 TRADEOFF_TABLE_NAME = "accuracy-latency.md"
 NOT_MEASURED = "not measured"
 NOT_APPLICABLE = "n/a"
@@ -30,6 +31,7 @@ TRADEOFF_COLUMNS = (
     "Entity token agreement",
     *(f"p50 / p95 ms, {length} tokens" for length in LATENCY_LENGTHS),
     "Neural Engine ops",
+    "mJ per 512-token window, above idle",
 )
 
 BuildKey = tuple[Backend, Precision, ComputeUnits | None]
@@ -43,6 +45,7 @@ class BuildResults:
     parity: Mapping[str, Any] | None = None
     latency: Mapping[str, Any] | None = None
     placement: Mapping[str, Any] | None = None
+    power: Mapping[str, Any] | None = None
 
 
 def build_key(payload: Mapping[str, Any]) -> BuildKey:
@@ -83,6 +86,7 @@ def collect_results(results_dir: Path) -> dict[BuildKey, BuildResults]:
         PARITY_DIR_NAME: "parity",
         LATENCY_DIR_NAME: "latency",
         PLACEMENT_DIR_NAME: "placement",
+        POWER_DIR_NAME: "power",
     }
     for directory in (ACCURACY_DIR_NAME, *slots):
         for path in result_files(results_dir, directory):
@@ -135,6 +139,12 @@ def placement_cell(backend: Backend, payload: Mapping[str, Any] | None) -> str:
     return f"{share:.1%} of {payload['operations']}"
 
 
+def power_cell(payload: Mapping[str, Any] | None) -> str:
+    if payload is None:
+        return NOT_MEASURED
+    return f"{payload['millijoules_per_window_above_idle']['total']:.1f}"
+
+
 def size_cell(results: BuildResults) -> str:
     for payload in (results.accuracy, results.latency, results.parity):
         if payload is not None and payload.get("build"):
@@ -155,6 +165,7 @@ def tradeoff_row(key: BuildKey, results: BuildResults) -> list[str]:
         parity_cell(key, results.parity, "entity_token_agreement"),
         *(latency_cell(results.latency, length) for length in LATENCY_LENGTHS),
         placement_cell(backend, results.placement),
+        power_cell(results.power),
     ]
 
 
@@ -183,7 +194,9 @@ def tradeoff_caption(collected: Mapping[BuildKey, BuildResults]) -> str:
         "Accuracy against latency for every build. F1 is strict, overall, on the "
         "dev-test set with the fp32 torch thresholds. Token agreement is with fp32 "
         "torch on 2,000 validation windows. Latency is one window at batch size 1, "
-        f"model call only, after warmup. Latency machine: {machines}."
+        "model call only, after warmup. Energy is CPU, GPU, and Neural Engine power "
+        "from powermetrics during a fixed loop, minus idle, divided by windows run. "
+        f"Latency machine: {machines}."
     )
 
 
