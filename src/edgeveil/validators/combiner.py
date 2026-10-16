@@ -1,31 +1,53 @@
+import re
 from collections.abc import Sequence
 from dataclasses import replace
 
 from edgeveil.spans import EntityType, Span
 from edgeveil.validators.finders import (
-    MIN_PHONE_DIGITS,
+    EMAIL,
     digits_of,
+    has_phone_digit_count,
     is_valid_card_number,
 )
 
+OVERRIDING_VALIDATOR_TYPES = frozenset({EntityType.EMAIL, EntityType.CREDIT_CARD})
+SSN_DIGIT_COUNTS = frozenset({4, 9})
+SSN_SHAPE = re.compile(r"[\d -]+")
 
-def passes_hard_check(text: str, span: Span) -> bool:
+
+def is_ssn_shaped(value: str) -> bool:
+    return (
+        SSN_SHAPE.fullmatch(value) is not None
+        and len(digits_of(value)) in SSN_DIGIT_COUNTS
+    )
+
+
+def passes_format_check(text: str, span: Span) -> bool:
     value = text[span.start : span.end]
     if span.label is EntityType.CREDIT_CARD:
         return is_valid_card_number(value)
     if span.label is EntityType.PHONE:
-        return len(digits_of(value)) >= MIN_PHONE_DIGITS
+        return has_phone_digit_count(value)
+    if span.label is EntityType.SSN:
+        return is_ssn_shaped(value)
+    if span.label is EntityType.EMAIL:
+        return EMAIL.fullmatch(value) is not None
     return True
 
 
-def strictly_contains(outer: Span, inner: Span) -> bool:
-    covers = outer.start <= inner.start and inner.end <= outer.end
-    return covers and (outer.start, outer.end) != (inner.start, inner.end)
+def may_take_over(text: str, validator_span: Span, model_span: Span) -> bool:
+    if validator_span.label in OVERRIDING_VALIDATOR_TYPES:
+        return True
+    if model_span.label is validator_span.label:
+        return True
+    return not passes_format_check(text, model_span)
 
 
-def model_span_wins(model_span: Span, validator_span: Span) -> bool:
-    return model_span.label is not validator_span.label and strictly_contains(
-        model_span, validator_span
+def is_accepted(text: str, validator_span: Span, model_spans: Sequence[Span]) -> bool:
+    return all(
+        may_take_over(text, validator_span, model_span)
+        for model_span in model_spans
+        if model_span.overlaps(validator_span)
     )
 
 
@@ -36,45 +58,32 @@ def stripped(text: str, span: Span, start: int, end: int) -> Span | None:
     return replace(span, start=start, end=end) if end > start else None
 
 
-def outside_part(text: str, span: Span, validator_span: Span) -> Span | None:
-    if span.label is validator_span.label:
-        return None
-    if span.start < validator_span.start:
-        return stripped(text, span, span.start, validator_span.start)
-    if validator_span.end < span.end:
-        return stripped(text, span, validator_span.end, span.end)
-    return None
-
-
-def resolved_model_span(
+def pieces_outside(
     text: str, model_span: Span, validator_spans: Sequence[Span]
-) -> Span | None:
-    current: Span | None = model_span
+) -> list[Span]:
+    pieces: list[Span | None] = []
+    cursor = model_span.start
     for validator_span in validator_spans:
-        if current is None:
-            return None
-        if current.overlaps(validator_span) and not model_span_wins(
-            current, validator_span
-        ):
-            current = outside_part(text, current, validator_span)
-    return current
-
-
-def survives_model(validator_span: Span, model_spans: Sequence[Span]) -> bool:
-    return not any(
-        model_span_wins(model_span, validator_span)
-        for model_span in model_spans
-        if model_span.overlaps(validator_span)
-    )
+        if not model_span.overlaps(validator_span):
+            continue
+        if validator_span.start > cursor:
+            pieces.append(stripped(text, model_span, cursor, validator_span.start))
+        cursor = max(cursor, validator_span.end)
+    if cursor < model_span.end:
+        pieces.append(stripped(text, model_span, cursor, model_span.end))
+    return [piece for piece in pieces if piece is not None]
 
 
 def combine_spans(
     text: str, model_spans: Sequence[Span], validator_spans: Sequence[Span]
 ) -> list[Span]:
-    checked = [span for span in model_spans if passes_hard_check(text, span)]
-    resolved = [resolved_model_span(text, span, validator_spans) for span in checked]
-    kept_model = [span for span in resolved if span is not None]
-    kept_validators = [
-        span for span in validator_spans if survives_model(span, checked)
+    accepted = sorted(
+        (span for span in validator_spans if is_accepted(text, span, model_spans)),
+        key=lambda span: span.start,
+    )
+    pieces = [
+        piece
+        for model_span in model_spans
+        for piece in pieces_outside(text, model_span, accepted)
     ]
-    return sorted(kept_model + kept_validators, key=lambda span: span.start)
+    return sorted(pieces + accepted, key=lambda span: span.start)
