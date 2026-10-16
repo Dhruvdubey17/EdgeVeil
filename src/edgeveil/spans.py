@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -65,3 +66,19 @@ class GoldSpan:
 class LabeledText:
     text: str = field(repr=False)
     spans: tuple[GoldSpan, ...]
+
+
+def uncovered_ranges(
+    start: int, end: int, blockers: Sequence[Span]
+) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    cursor = start
+    for blocker in sorted(blockers, key=lambda span: span.start):
+        if blocker.end <= cursor or blocker.start >= end:
+            continue
+        if blocker.start > cursor:
+            ranges.append((cursor, blocker.start))
+        cursor = max(cursor, blocker.end)
+    if cursor < end:
+        ranges.append((cursor, end))
+    return ranges

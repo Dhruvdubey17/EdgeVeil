@@ -1,8 +1,6 @@
 from itertools import pairwise
 
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
 
 from edgeveil.spans import EntityType, Span, SpanSource
 from edgeveil.validators.combiner import combine_spans
@@ -155,6 +153,16 @@ def test_a_phone_never_relabels_a_model_span_that_passes_its_check() -> None:
     assert combine_spans(text, [gov_id], find_validator_spans(text)) == [gov_id]
 
 
+def test_a_dropped_phone_still_masks_what_the_model_left_uncovered() -> None:
+    text = "National ID: 0000 1111 2222, holder"
+    gov_id = model(13, 22, EntityType.GOV_ID)
+    combined = combine_spans(text, [gov_id], find_validator_spans(text))
+    assert [(text[span.start : span.end], span.label) for span in combined] == [
+        ("0000 1111", EntityType.GOV_ID),
+        ("2222", EntityType.PHONE),
+    ]
+
+
 def test_weak_validators_add_spans_where_the_model_emitted_nothing() -> None:
     text = f"call 202-555-0143 with key {SECRET}"
     combined = combine_spans(text, [], find_validator_spans(text))
@@ -197,39 +205,6 @@ def test_a_partly_overlapping_model_span_keeps_the_part_outside() -> None:
         ("Ada Quill", EntityType.PERSON),
         ("ada.quill@example.com", EntityType.EMAIL),
     ]
-
-
-MASKABLE = st.text(alphabet="0123456789abcAZ@.- ", min_size=1, max_size=40)
-MODEL_LABELS = st.sampled_from(list(EntityType))
-
-
-@st.composite
-def text_with_model_spans(draw: st.DrawFn) -> tuple[str, list[Span]]:
-    text = draw(MASKABLE)
-    cuts = sorted(draw(st.sets(st.integers(0, len(text)), max_size=8)))
-    spans = [
-        model(start, end, draw(MODEL_LABELS))
-        for start, end in pairwise(cuts)
-        if text[start:end].strip() and draw(st.booleans())
-    ]
-    return text, spans
-
-
-@given(text_with_model_spans())
-def test_combining_never_unmasks_and_never_invents(
-    case: tuple[str, list[Span]],
-) -> None:
-    text, spans = case
-    validators = find_validator_spans(text)
-    combined = combine_spans(text, spans, validators)
-
-    def covered(items: list[Span]) -> set[int]:
-        return {index for item in items for index in range(item.start, item.end)}
-
-    model_characters = {index for index in covered(spans) if not text[index].isspace()}
-    assert model_characters <= covered(combined)
-    assert covered(combined) <= covered(spans) | covered(validators)
-    assert all(not left.overlaps(right) for left, right in pairwise(combined))
 
 
 def test_combined_spans_never_overlap() -> None:

@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 import numpy as np
 from numpy.typing import NDArray
@@ -6,7 +7,7 @@ from numpy.typing import NDArray
 from edgeveil.detector.alignment import Offset, decode_label_ids, is_special_token
 from edgeveil.detector.labels import OUTSIDE_ID, begin_id, inside_id
 from edgeveil.detector.windows import Window
-from edgeveil.spans import EntityType, GoldSpan, Span, SpanSource
+from edgeveil.spans import EntityType, GoldSpan, Span, SpanSource, uncovered_ranges
 
 Thresholds = Mapping[EntityType, float]
 DEFAULT_THRESHOLD = 0.5
@@ -84,28 +85,52 @@ def window_spans(
     return spans
 
 
-def merged_pair(kept: Span, incoming: Span) -> Span:
-    if kept.label is incoming.label:
-        return Span(
-            kept.start,
-            max(kept.end, incoming.end),
-            kept.label,
-            max(kept.score, incoming.score),
-            SpanSource.MODEL,
-        )
-    return incoming if incoming.score > kept.score else kept
-
-
-def merge_window_spans(spans: Sequence[Span]) -> list[Span]:
-    merged: list[Span] = []
-    for incoming in sorted(spans, key=lambda span: (span.start, -span.score)):
-        if merged and (
-            merged[-1].overlaps(incoming) or touches_same_type(merged[-1], incoming)
+def join_same_type(spans: Sequence[Span]) -> list[Span]:
+    joined: list[Span] = []
+    for incoming in sorted(spans, key=lambda span: (span.label.value, span.start)):
+        previous = joined[-1] if joined else None
+        if (
+            previous is not None
+            and previous.label is incoming.label
+            and (previous.overlaps(incoming) or touches_same_type(previous, incoming))
         ):
-            merged[-1] = merged_pair(merged[-1], incoming)
+            joined[-1] = replace(
+                previous,
+                end=max(previous.end, incoming.end),
+                score=max(previous.score, incoming.score),
+            )
         else:
-            merged.append(incoming)
-    return merged
+            joined.append(incoming)
+    return joined
+
+
+def snapped_to_tokens(
+    span: Span, start: int, end: int, offsets: Sequence[Offset]
+) -> Span | None:
+    inside = [
+        offset
+        for offset in offsets
+        if not is_special_token(offset) and start <= offset[0] and offset[1] <= end
+    ]
+    if not inside:
+        return None
+    return replace(span, start=inside[0][0], end=inside[-1][1])
+
+
+def merge_window_spans(spans: Sequence[Span], offsets: Sequence[Offset]) -> list[Span]:
+    kept: list[Span] = []
+    for span in sorted(
+        join_same_type(spans), key=lambda item: (-item.score, item.start)
+    ):
+        for start, end in uncovered_ranges(span.start, span.end, kept):
+            piece = (
+                replace(span, start=start, end=end)
+                if (start, end) == (span.start, span.end)
+                else snapped_to_tokens(span, start, end, offsets)
+            )
+            if piece is not None:
+                kept.append(piece)
+    return sorted(kept, key=lambda span: span.start)
 
 
 def logits_to_spans(
@@ -118,4 +143,5 @@ def logits_to_spans(
         for logits, window in zip(window_logits, windows, strict=True)
         for span in window_spans(softmax(logits), window.offsets, thresholds)
     ]
-    return merge_window_spans(spans)
+    offsets = sorted({offset for window in windows for offset in window.offsets})
+    return merge_window_spans(spans, offsets)

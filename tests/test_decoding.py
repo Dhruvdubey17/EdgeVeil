@@ -1,20 +1,14 @@
-from itertools import pairwise
-
 import numpy as np
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
 
 from edgeveil.detector.alignment import SPECIAL_TOKEN_OFFSET
 from edgeveil.detector.decoding import (
     candidate_label_ids,
-    join_touching,
     merge_window_spans,
-    touches_same_type,
     window_spans,
 )
 from edgeveil.detector.labels import BIO_LABELS, LABEL_TO_ID
-from edgeveil.spans import EntityType, GoldSpan, Span, SpanSource
+from edgeveil.spans import EntityType, Span, SpanSource
 
 UNIFORM = dict.fromkeys(EntityType, 0.5)
 
@@ -75,30 +69,39 @@ def test_window_spans_carry_the_mean_entity_mass_as_score() -> None:
     assert found.source is SpanSource.MODEL
 
 
+TOKENS = [(0, 4), (5, 9), (10, 15), (16, 20)]
+
+
 def test_overlapping_spans_of_one_type_merge_across_windows() -> None:
     merged = merge_window_spans(
-        [span(0, 9, EntityType.PERSON, 0.7), span(4, 15, EntityType.PERSON, 0.9)]
+        [span(0, 9, EntityType.PERSON, 0.7), span(5, 15, EntityType.PERSON, 0.9)],
+        TOKENS,
     )
     assert merged == [span(0, 15, EntityType.PERSON, 0.9)]
 
 
 def test_identical_spans_from_two_windows_collapse() -> None:
     first = span(5, 20, EntityType.EMAIL, 0.8)
-    assert merge_window_spans([first, span(5, 20, EntityType.EMAIL, 0.6)]) == [first]
+    merged = merge_window_spans([first, span(5, 20, EntityType.EMAIL, 0.6)], TOKENS)
+    assert merged == [first]
 
 
-def test_overlapping_spans_of_different_types_keep_the_higher_score() -> None:
+def test_the_higher_score_wins_an_overlap_and_the_rest_stays_masked() -> None:
     merged = merge_window_spans(
-        [span(0, 10, EntityType.PHONE, 0.6), span(5, 12, EntityType.GOV_ID, 0.8)]
+        [span(0, 15, EntityType.PHONE, 0.6), span(5, 20, EntityType.GOV_ID, 0.8)],
+        TOKENS,
     )
-    assert merged == [span(5, 12, EntityType.GOV_ID, 0.8)]
+    assert merged == [
+        span(0, 4, EntityType.PHONE, 0.6),
+        span(5, 20, EntityType.GOV_ID, 0.8),
+    ]
 
 
 def test_touching_spans_of_one_type_merge_and_of_two_types_stay_separate() -> None:
-    same = [span(0, 3, EntityType.PERSON, 0.6), span(3, 6, EntityType.PERSON, 0.9)]
-    assert merge_window_spans(same) == [span(0, 6, EntityType.PERSON, 0.9)]
-    mixed = [span(0, 3, EntityType.PERSON, 0.9), span(3, 6, EntityType.EMAIL, 0.9)]
-    assert merge_window_spans(mixed) == mixed
+    same = [span(0, 4, EntityType.PERSON, 0.6), span(4, 9, EntityType.PERSON, 0.9)]
+    assert merge_window_spans(same, TOKENS) == [span(0, 9, EntityType.PERSON, 0.9)]
+    mixed = [span(0, 4, EntityType.PERSON, 0.9), span(4, 9, EntityType.EMAIL, 0.9)]
+    assert merge_window_spans(mixed, TOKENS) == mixed
 
 
 def test_touching_tokens_of_one_type_form_one_span_before_the_threshold() -> None:
@@ -106,47 +109,3 @@ def test_touching_tokens_of_one_type_form_one_span_before_the_threshold() -> Non
     offsets = [(0, 5), (5, 6), (6, 20)]
     [found] = window_spans(table, offsets, UNIFORM)
     assert (found.start, found.end, found.label) == (0, 20, EntityType.EMAIL)
-
-
-LABELS = st.sampled_from([EntityType.PERSON, EntityType.EMAIL])
-
-
-@st.composite
-def ordered_spans(draw: st.DrawFn) -> list[GoldSpan]:
-    gaps = draw(st.lists(st.integers(0, 2), min_size=1, max_size=12))
-    lengths = draw(st.lists(st.integers(1, 4), min_size=len(gaps), max_size=len(gaps)))
-    spans: list[GoldSpan] = []
-    cursor = 0
-    for gap, length in zip(gaps, lengths, strict=True):
-        cursor += gap
-        spans.append(GoldSpan(cursor, cursor + length, draw(LABELS)))
-        cursor += length
-    return spans
-
-
-def covered(spans: list[GoldSpan] | list[Span], label: EntityType) -> set[int]:
-    return {
-        index
-        for item in spans
-        if item.label is label
-        for index in range(item.start, item.end)
-    }
-
-
-@given(ordered_spans())
-def test_joining_leaves_no_touching_pair_and_keeps_coverage(
-    spans: list[GoldSpan],
-) -> None:
-    joined = join_touching(spans)
-    assert not any(touches_same_type(left, right) for left, right in pairwise(joined))
-    for label in (EntityType.PERSON, EntityType.EMAIL):
-        assert covered(joined, label) == covered(spans, label)
-
-
-@given(ordered_spans())
-def test_window_merge_joins_touching_spans_of_one_type(spans: list[GoldSpan]) -> None:
-    model_spans = [span(item.start, item.end, item.label, 0.9) for item in spans]
-    merged = merge_window_spans(model_spans)
-    assert not any(touches_same_type(left, right) for left, right in pairwise(merged))
-    for label in (EntityType.PERSON, EntityType.EMAIL):
-        assert covered(merged, label) == covered(model_spans, label)

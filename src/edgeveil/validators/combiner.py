@@ -2,7 +2,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import replace
 
-from edgeveil.spans import EntityType, Span
+from edgeveil.spans import EntityType, Span, uncovered_ranges
 from edgeveil.validators.finders import (
     EMAIL,
     digits_of,
@@ -61,29 +61,29 @@ def stripped(text: str, span: Span, start: int, end: int) -> Span | None:
 def pieces_outside(
     text: str, model_span: Span, validator_spans: Sequence[Span]
 ) -> list[Span]:
-    pieces: list[Span | None] = []
-    cursor = model_span.start
-    for validator_span in validator_spans:
-        if not model_span.overlaps(validator_span):
-            continue
-        if validator_span.start > cursor:
-            pieces.append(stripped(text, model_span, cursor, validator_span.start))
-        cursor = max(cursor, validator_span.end)
-    if cursor < model_span.end:
-        pieces.append(stripped(text, model_span, cursor, model_span.end))
+    pieces = [
+        stripped(text, model_span, start, end)
+        for start, end in uncovered_ranges(
+            model_span.start, model_span.end, validator_spans
+        )
+    ]
     return [piece for piece in pieces if piece is not None]
 
 
 def combine_spans(
     text: str, model_spans: Sequence[Span], validator_spans: Sequence[Span]
 ) -> list[Span]:
-    accepted = sorted(
-        (span for span in validator_spans if is_accepted(text, span, model_spans)),
-        key=lambda span: span.start,
-    )
-    pieces = [
+    accepted = [s for s in validator_spans if is_accepted(text, s, model_spans)]
+    rejected = [s for s in validator_spans if s not in accepted]
+    model_pieces = [
         piece
         for model_span in model_spans
         for piece in pieces_outside(text, model_span, accepted)
     ]
-    return sorted(pieces + accepted, key=lambda span: span.start)
+    validator_pieces = [
+        piece
+        for validator_span in rejected
+        for piece in pieces_outside(text, validator_span, model_spans)
+    ]
+    combined = model_pieces + accepted + validator_pieces
+    return sorted(combined, key=lambda span: span.start)
