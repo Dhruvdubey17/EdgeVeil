@@ -52,6 +52,20 @@ def tokens_inside(span: GoldSpan, offsets: Sequence[Offset]) -> list[int]:
     ]
 
 
+def touches_same_type(left: GoldSpan | Span, right: GoldSpan | Span) -> bool:
+    return left.label is right.label and left.end == right.start
+
+
+def join_touching(spans: Sequence[GoldSpan]) -> list[GoldSpan]:
+    joined: list[GoldSpan] = []
+    for span in sorted(spans, key=lambda item: item.start):
+        if joined and touches_same_type(joined[-1], span):
+            joined[-1] = GoldSpan(joined[-1].start, span.end, span.label)
+        else:
+            joined.append(span)
+    return joined
+
+
 def window_spans(
     probabilities: NDArray[np.floating],
     offsets: Sequence[Offset],
@@ -59,7 +73,8 @@ def window_spans(
 ) -> list[Span]:
     masses = entity_masses(probabilities)
     spans: list[Span] = []
-    for decoded in decode_label_ids(candidate_label_ids(probabilities), offsets):
+    decoded_spans = decode_label_ids(candidate_label_ids(probabilities), offsets)
+    for decoded in join_touching(decoded_spans):
         column = ENTITY_ORDER.index(decoded.label)
         score = min(float(masses[tokens_inside(decoded, offsets), column].mean()), 1.0)
         if score >= thresholds[decoded.label]:
@@ -84,7 +99,9 @@ def merged_pair(kept: Span, incoming: Span) -> Span:
 def merge_window_spans(spans: Sequence[Span]) -> list[Span]:
     merged: list[Span] = []
     for incoming in sorted(spans, key=lambda span: (span.start, -span.score)):
-        if merged and merged[-1].overlaps(incoming):
+        if merged and (
+            merged[-1].overlaps(incoming) or touches_same_type(merged[-1], incoming)
+        ):
             merged[-1] = merged_pair(merged[-1], incoming)
         else:
             merged.append(incoming)
