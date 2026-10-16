@@ -1,4 +1,5 @@
 import re
+from collections.abc import Sequence
 from itertools import pairwise
 
 import numpy as np
@@ -34,7 +35,7 @@ MAX_LOGIT_SCALE = 6.0
 TOKEN_TYPES = ("O", "PERSON", "EMAIL", "PHONE", "CREDIT_CARD")
 
 
-def bio_tags(types: list[str]) -> list[str]:
+def bio_tags(types: Sequence[str]) -> list[str]:
     tags: list[str] = []
     for index, kind in enumerate(types):
         continues = index > 0 and types[index - 1] == kind
