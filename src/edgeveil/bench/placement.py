@@ -46,6 +46,7 @@ class PlacementReport:
     neural_engine_share: float
     neural_engine_cost_share: float
     operators_off_neural_engine: dict[str, dict[str, int]]
+    operators_unsupported_on_neural_engine: dict[str, int]
 
 
 def all_operations(
@@ -81,6 +82,7 @@ class OperationPlacement:
     operator: str
     device: str | None
     cost: float
+    supported: frozenset[str] = frozenset()
 
 
 def operation_placements(
@@ -99,6 +101,11 @@ def operation_placements(
             if usage is None
             else device_name(usage.preferred_compute_device),
             cost=0.0 if cost is None else cost.weight,
+            supported=frozenset(
+                ()
+                if usage is None
+                else (device_name(item) for item in usage.supported_compute_devices)
+            ),
         )
 
 
@@ -106,12 +113,15 @@ def tally_placements(placements: Iterable[OperationPlacement]) -> PlacementRepor
     by_device: Counter[str] = Counter()
     cost_by_device: defaultdict[str, float] = defaultdict(float)
     off_neural_engine: dict[str, Counter[str]] = {}
+    unsupported: Counter[str] = Counter()
     for placement in placements:
         if placement.device is None:
             by_device[UNASSIGNED] += 1
             continue
         by_device[placement.device] += 1
         cost_by_device[placement.device] += placement.cost
+        if NEURAL_ENGINE not in placement.supported:
+            unsupported[placement.operator] += 1
         if placement.device != NEURAL_ENGINE:
             operators = off_neural_engine.setdefault(placement.device, Counter())
             operators[placement.operator] += 1
@@ -131,6 +141,7 @@ def tally_placements(placements: Iterable[OperationPlacement]) -> PlacementRepor
             device: dict(counts.most_common())
             for device, counts in off_neural_engine.items()
         },
+        operators_unsupported_on_neural_engine=dict(unsupported.most_common()),
     )
 
 
@@ -151,7 +162,9 @@ def write_placement_results(
         "source": (
             "coremltools MLComputePlan: preferred compute device per ML Program "
             "operation in the main function; operations without a device usage "
-            "are counted as unassigned and left out of the shares"
+            "are counted as unassigned and left out of the shares; "
+            "operators_unsupported_on_neural_engine counts operations whose "
+            "supported devices exclude the Neural Engine"
         ),
         **asdict(report),
         "environment": environment_record(),

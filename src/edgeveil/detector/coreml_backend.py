@@ -7,11 +7,14 @@ import numpy as np
 from edgeveil.detector.builds import ANE_SEQUENCE_LENGTHS, ComputeUnits
 from edgeveil.detector.decoding import Thresholds, uniform_thresholds
 from edgeveil.detector.inference import (
+    ATTENTION_BIAS_NAME,
     ATTENTION_MASK_NAME,
     INPUT_IDS_NAME,
     LOGITS_NAME,
+    POSITION_IDS_NAME,
     WindowLogits,
     detect_texts,
+    neural_engine_inputs,
     padded_batch,
 )
 from edgeveil.detector.windows import Window, load_tokenizer
@@ -19,6 +22,8 @@ from edgeveil.spans import Span
 
 COREML_COMPUTE_UNITS = {
     ComputeUnits.ALL: coremltools.ComputeUnit.ALL,
+    ComputeUnits.CPU_AND_NE: coremltools.ComputeUnit.CPU_AND_NE,
+    ComputeUnits.CPU_AND_GPU: coremltools.ComputeUnit.CPU_AND_GPU,
     ComputeUnits.CPU_ONLY: coremltools.ComputeUnit.CPU_ONLY,
 }
 
@@ -69,3 +74,18 @@ class CoreMLDetector:
 
     def detect(self, text: str) -> list[Span]:
         return self.detect_batch([text])[0]
+
+
+class NeuralEngineDetector(CoreMLDetector):
+    def single_window_logits(self, window: Window) -> WindowLogits:
+        token_count = len(window.input_ids)
+        inputs = neural_engine_inputs(window, enumerated_length(token_count))
+        output = self.model.predict(
+            {
+                INPUT_IDS_NAME: inputs.input_ids,
+                POSITION_IDS_NAME: inputs.position_ids,
+                ATTENTION_BIAS_NAME: inputs.attention_bias,
+            }
+        )
+        channels_first = np.asarray(output[LOGITS_NAME])[0, :, 0, :token_count]
+        return channels_first.T.astype(np.float32)

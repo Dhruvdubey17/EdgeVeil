@@ -12,8 +12,8 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
-from edgeveil.detector.builds import ComputeUnits, Precision
-from edgeveil.detector.coreml_backend import CoreMLDetector
+from edgeveil.detector.builds import Backend, ComputeUnits, Precision
+from edgeveil.detector.coreml_backend import CoreMLDetector, NeuralEngineDetector
 from edgeveil.detector.labels import ID_TO_LABEL, LABEL_TO_ID
 from edgeveil.detector.torch_backend import TorchDetector
 from edgeveil.detector.windows import Window, encode_windows
@@ -65,7 +65,7 @@ def model_dir(
 @pytest.fixture(scope="module")
 def fp16_path(model_dir: Path) -> Path:
     path = model_dir / "fp16.mlpackage"
-    convert_fp16(model_dir).save(str(path))
+    convert_fp16(model_dir, Backend.COREML).save(str(path))
     return path
 
 
@@ -100,3 +100,19 @@ def test_weight_quantized_packages_run(
     detector = CoreMLDetector(path, model_dir, compute_units=ComputeUnits.CPU_ONLY)
     logits = detector.window_logits(windows)
     assert all(np.isfinite(row).all() for row in logits)
+
+
+@needs_macos
+def test_neural_engine_package_matches_torch_at_every_enumerated_length(
+    model_dir: Path, windows: list[Window]
+) -> None:
+    path = model_dir / "neural-engine-fp16.mlpackage"
+    convert_fp16(model_dir, Backend.COREML_ANE).save(str(path))
+    reference = TorchDetector(model_dir, device=torch.device("cpu"))
+    converted = NeuralEngineDetector(
+        path, model_dir, compute_units=ComputeUnits.CPU_ONLY
+    )
+    for expected, actual in zip(
+        reference.window_logits(windows), converted.window_logits(windows), strict=True
+    ):
+        assert np.abs(expected - actual).max() < FP16_LOGIT_TOLERANCE

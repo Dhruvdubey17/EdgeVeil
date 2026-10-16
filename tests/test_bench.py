@@ -58,10 +58,11 @@ def test_percentiles_interpolate_linearly() -> None:
 
 
 def test_placement_shares_leave_out_unassigned_operations() -> None:
+    both = frozenset({CPU, NEURAL_ENGINE})
     placements = [
-        OperationPlacement("linear", NEURAL_ENGINE, 3.0),
-        OperationPlacement("linear", NEURAL_ENGINE, 3.0),
-        OperationPlacement("gather", CPU, 2.0),
+        OperationPlacement("linear", NEURAL_ENGINE, 3.0, both),
+        OperationPlacement("linear", NEURAL_ENGINE, 3.0, both),
+        OperationPlacement("gather", CPU, 2.0, frozenset({CPU})),
         OperationPlacement("const", None, 0.0),
     ]
     report = tally_placements(placements)
@@ -70,6 +71,7 @@ def test_placement_shares_leave_out_unassigned_operations() -> None:
     assert report.neural_engine_share == pytest.approx(2 / 3)
     assert report.neural_engine_cost_share == pytest.approx(6 / 8)
     assert report.operators_off_neural_engine == {CPU: {"gather": 1}}
+    assert report.operators_unsupported_on_neural_engine == {"gather": 1}
 
 
 @pytest.mark.parametrize(

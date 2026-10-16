@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from edgeveil.detector.builds import Backend, ComputeUnits, Precision
+from edgeveil.detector.builds import COREML_BACKENDS, Backend, ComputeUnits, Precision
 from edgeveil.detector.presets import ModelPreset
 
 DEFAULT_DATA_DIR = Path("data")
@@ -37,7 +37,7 @@ ComputeUnitsOption = Annotated[
     list[ComputeUnits] | None,
     typer.Option(
         "--compute-units",
-        help="Core ML compute units; repeat for several. Default: all and cpu-only.",
+        help="Core ML compute units; repeat for several. Default: every setting.",
     ),
 ]
 
@@ -85,7 +85,7 @@ def built_precisions(
 def unit_settings(
     backend: Backend, requested: list[ComputeUnits] | None
 ) -> list[ComputeUnits | None]:
-    if backend is not Backend.COREML:
+    if backend not in COREML_BACKENDS:
         return [None]
     return [*(requested or ComputeUnits)]
 
@@ -155,6 +155,9 @@ def latency(
     "Neural Engine, from MLComputePlan, and save one result per build and setting."
 )
 def placement(
+    backend: Annotated[
+        Backend, typer.Option(help="Core ML backend whose builds to inspect.")
+    ] = Backend.COREML,
     precision: PrecisionsOption = None,
     compute_units: ComputeUnitsOption = None,
     preset: PresetOption = ModelPreset.DISTILBERT,
@@ -165,13 +168,13 @@ def placement(
     from edgeveil.detector.builds import build_path, build_record, run_name
 
     model_dir = models_dir / preset.value
-    for item in built_precisions(model_dir, Backend.COREML, precision):
+    for item in built_precisions(model_dir, backend, precision):
         for units in compute_units or list(ComputeUnits):
-            package = build_path(model_dir, Backend.COREML, item)
+            package = build_path(model_dir, backend, item)
             report = measure_placement(package, units)
-            name = run_name(preset.value, Backend.COREML, item, units)
+            name = run_name(preset.value, backend, item, units)
             path = results_dir / "placement" / f"{name}.json"
-            build = build_record(model_dir, Backend.COREML, item, units)
+            build = build_record(model_dir, backend, item, units)
             write_placement_results(report, build, path)
             console.print(
                 f"{name}: {report.neural_engine_share:.1%} of {report.operations} "

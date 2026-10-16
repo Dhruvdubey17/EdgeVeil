@@ -8,6 +8,7 @@ from edgeveil.detector.protocol import BatchDetector
 
 ONNX_DIR_NAME = "onnx"
 COREML_DIR_NAME = "coreml"
+NEURAL_ENGINE_DIR_NAME = "coreml-ane"
 TORCH_WEIGHTS_NAME = "model.safetensors"
 REFERENCE_RUN_SUFFIX = "fp32-torch"
 INT4_BLOCK_SIZE = 32
@@ -22,6 +23,7 @@ class Backend(StrEnum):
     TORCH = "torch"
     ONNXRUNTIME = "onnxruntime"
     COREML = "coreml"
+    COREML_ANE = "coreml-ane"
     QUALCOMM = "qualcomm"
 
 
@@ -36,7 +38,12 @@ class Precision(StrEnum):
 
 class ComputeUnits(StrEnum):
     ALL = "all"
+    CPU_AND_NE = "cpu-and-ne"
+    CPU_AND_GPU = "cpu-and-gpu"
     CPU_ONLY = "cpu-only"
+
+
+COREML_BACKENDS = frozenset({Backend.COREML, Backend.COREML_ANE})
 
 
 QUANTIZATION_SCHEMES: dict[Backend, dict[Precision, str]] = {
@@ -58,6 +65,11 @@ QUANTIZATION_SCHEMES: dict[Backend, dict[Precision, str]] = {
         Precision.INT8: "INT8 weights per channel, FP16 activations",
         Precision.INT4: "INT4 weights in blocks, FP16 activations",
     },
+    Backend.COREML_ANE: {
+        Precision.FP16: "Neural Engine layout, FP16 weights and activations",
+        Precision.INT8: "Neural Engine layout, INT8 weights per channel",
+        Precision.INT4: "Neural Engine layout, INT4 weights in blocks",
+    },
     Backend.QUALCOMM: {},
 }
 
@@ -77,7 +89,8 @@ def build_path(model_dir: Path, backend: Backend, precision: Precision) -> Path:
         return model_dir / TORCH_WEIGHTS_NAME
     if backend is Backend.ONNXRUNTIME:
         return model_dir / ONNX_DIR_NAME / f"{precision.value}.onnx"
-    return model_dir / COREML_DIR_NAME / f"{precision.value}.mlpackage"
+    directory = COREML_DIR_NAME if backend is Backend.COREML else NEURAL_ENGINE_DIR_NAME
+    return model_dir / directory / f"{precision.value}.mlpackage"
 
 
 def run_name(
@@ -129,7 +142,7 @@ class BuildRecord:
 def effective_compute_units(
     backend: Backend, compute_units: ComputeUnits | None
 ) -> ComputeUnits | None:
-    if backend is not Backend.COREML:
+    if backend not in COREML_BACKENDS:
         return None
     return compute_units or ComputeUnits.ALL
 
@@ -174,6 +187,8 @@ def load_detector(
         from edgeveil.detector.onnx_backend import OnnxRuntimeDetector
 
         return OnnxRuntimeDetector(path, model_dir, thresholds)
-    from edgeveil.detector.coreml_backend import CoreMLDetector
+    from edgeveil.detector.coreml_backend import CoreMLDetector, NeuralEngineDetector
 
+    if backend is Backend.COREML_ANE:
+        return NeuralEngineDetector(path, model_dir, thresholds, compute_units)
     return CoreMLDetector(path, model_dir, thresholds, compute_units)

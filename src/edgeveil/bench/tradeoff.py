@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from edgeveil.detector.builds import Backend, ComputeUnits, Precision
+from edgeveil.detector.builds import COREML_BACKENDS, Backend, ComputeUnits, Precision
 from edgeveil.evaluation.detection import Detection
 
 ACCURACY_DIR_NAME = "accuracy"
@@ -127,7 +127,7 @@ def latency_cell(payload: Mapping[str, Any] | None, length: str) -> str:
 
 
 def placement_cell(backend: Backend, payload: Mapping[str, Any] | None) -> str:
-    if backend is not Backend.COREML:
+    if backend not in COREML_BACKENDS:
         return NOT_APPLICABLE
     if payload is None:
         return NOT_MEASURED

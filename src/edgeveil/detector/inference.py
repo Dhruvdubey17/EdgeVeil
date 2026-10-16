@@ -14,6 +14,9 @@ PADDING_TOKEN_ID = 0
 INPUT_IDS_NAME = "input_ids"
 ATTENTION_MASK_NAME = "attention_mask"
 LOGITS_NAME = "logits"
+POSITION_IDS_NAME = "position_ids"
+ATTENTION_BIAS_NAME = "attention_bias"
+MASKED_POSITION_BIAS = -1e4
 
 WindowLogits = NDArray[np.float32]
 
@@ -33,6 +36,24 @@ def padded_batch(windows: Sequence[Window], width: int | None = None) -> PaddedB
         input_ids[row, : len(window.input_ids)] = window.input_ids
         attention_mask[row, : len(window.input_ids)] = 1
     return PaddedBatch(input_ids, attention_mask)
+
+
+@dataclass(frozen=True, slots=True)
+class NeuralEngineInputs:
+    input_ids: NDArray[np.int32]
+    position_ids: NDArray[np.int32]
+    attention_bias: NDArray[np.float32]
+
+
+def neural_engine_inputs(window: Window, width: int) -> NeuralEngineInputs:
+    batch = padded_batch([window], width)
+    is_padding = batch.attention_mask == 0
+    bias = np.where(is_padding, MASKED_POSITION_BIAS, 0.0).astype(np.float32)
+    return NeuralEngineInputs(
+        input_ids=batch.input_ids.astype(np.int32),
+        position_ids=np.arange(width, dtype=np.int32)[None, :],
+        attention_bias=bias[:, :, None, None],
+    )
 
 
 def batched_window_logits(
