@@ -7,6 +7,7 @@ Label in Label Studio with `docs/label_studio.xml`. Select character spans.
 ## Rules for every type
 
 - A span covers the value and nothing else: no surrounding spaces, quotes, brackets, or sentence punctuation.
+- Scheme words (`Basic`, `Bearer`), ID-type words (`DL`, `CDL`, `Passport No.`), and punctuation that wraps the whole value never go inside a span.
 - Spans never overlap or nest.
 - Label every occurrence, including repeats of the same value.
 - Do not label dates, ages, gender, sex, or titles. They are outside the entity set.
@@ -45,18 +46,20 @@ Label in Label Studio with `docs/label_studio.xml`. Select character spans.
 
 ## PHONE
 
-- The number as written, including a leading `+` and country code, parentheses, spaces, dots, and dashes. Leave out labels such as `tel:` or `Phone:`.
+- The number as written, including a leading `+` and country code, spaces, dots, and dashes. Leave out labels such as `tel:` or `Phone:`.
+- Area-code parentheses are part of the number: in `(555) 010-0123`, label all of it. Parentheses around the whole number are not: in `(555.0125)`, label `555.0125`.
 
 ## CREDENTIAL
 
 - Passwords, API keys, access tokens, and other secret values.
-- Label only the secret: leave out the field name (`password=`, `api_key:`), the `Bearer` scheme word, and surrounding quotes.
+- Label only the secret: leave out the field name (`password=`, `api_key:`), scheme words such as `Basic` and `Bearer`, and surrounding quotes.
 - Commit SHAs, UUIDs, checksums, and base64 data that is not a secret are not CREDENTIAL. Leave them unlabeled.
 - Usernames are not labeled.
 
 ## SSN
 
 - A US Social Security number or another national social insurance number, with its dashes or spaces.
+- A partial SSN, such as the last four digits, is labeled SSN. Label the digits only: in `***-**-1234`, label `1234`.
 
 ## CREDIT_CARD
 
@@ -65,7 +68,7 @@ Label in Label Studio with `docs/label_studio.xml`. Select character spans.
 
 ## GOV_ID
 
-- An ID card, passport, driver's license, or tax identification number. Label the number only, not words such as `Passport No.`
+- An ID card, passport, driver's license, or tax identification number. Label the number only, not ID-type words such as `DL`, `CDL`, or `Passport No.`
 
 ## Hard negatives
 
@@ -78,6 +81,19 @@ Include snippets with text that looks sensitive but is not one of the types. Lea
 - Prices.
 - Commit SHAs.
 - UUIDs.
+
+## Label lint
+
+`edgeveil data import-labels` checks every snippet against these rules before it writes a test set, and writes nothing if a check fails. The checks:
+
+- EMAIL spans contain `@`.
+- PERSON spans do not start with a title, contain a comma, or end with a possessive suffix. Two PERSON spans with only whitespace or listed connectors between them are one span.
+- Two ADDRESS spans with an allowed gap between them are one span, and an ADDRESS span does not end with a region code. An ADDRESS span with no digit is flagged for a decision, since it may be a lone city or a street name.
+- No span starts or ends with a scheme word, an ID-type word, a label word, or punctuation that wraps the value.
+- CREDIT_CARD spans have at least 13 digits, so partial card numbers are not labeled.
+- Masked SSNs such as `***-**-1234` have their digits labeled SSN.
+
+Fixes go in `data/test/corrections.jsonl`, never in the Label Studio export or the test set file. Each line names a snippet id, the old spans, the new spans, and the rule it follows. `import-labels` applies the corrections on top of the export, fails if an old span no longer matches, and then runs the checks. A span listed as new in a correction counts as reviewed and is not checked again, so a reviewer who decides to keep a flagged span records it as a correction whose new span equals the old one. `edgeveil data lint-labels` prints every failed check with the snippet text and a proposed fix, for review.
 
 ## Test set size
 

@@ -8,6 +8,14 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
+from edgeveil.evaluation.corrections import (
+    Correction,
+    apply_corrections,
+    load_corrections,
+    propose_corrections,
+    reviewed_spans,
+)
+from edgeveil.evaluation.label_lint import LintFinding, lint_snippet
 from edgeveil.evaluation.test_set import LabeledSnippet, write_test_set
 from edgeveil.spans import EntityType, GoldSpan
 
@@ -192,15 +200,75 @@ def convert_export(export: Any) -> tuple[list[LabeledSnippet], list[LabelingIssu
     return snippets, issues
 
 
-def import_label_studio_export(
-    export_paths: Sequence[Path], output_path: Path
-) -> list[LabelingIssue]:
+def exported_snippets(
+    export_paths: Sequence[Path],
+) -> tuple[list[LabeledSnippet], list[LabelingIssue]]:
     tasks = [
         task
         for path in export_paths
         for task in json.loads(path.read_text(encoding="utf-8"))
     ]
-    snippets, issues = convert_export(tasks)
+    return convert_export(tasks)
+
+
+def lint_issues(
+    snippets: Sequence[LabeledSnippet], corrections: Sequence[Correction]
+) -> list[LabelingIssue]:
+    reviewed = reviewed_spans(corrections)
+    issues: list[LabelingIssue] = []
+    for snippet in snippets:
+        for finding in lint_snippet(snippet, reviewed.get(snippet.snippet_id, set())):
+            located = finding.old + finding.new
+            issues.append(
+                LabelingIssue(
+                    snippet.snippet_id,
+                    located[0].start,
+                    located[0].end,
+                    f"label lint: {finding.rule.value}",
+                )
+            )
+    return issues
+
+
+def corrected_export(
+    export_paths: Sequence[Path], corrections_path: Path
+) -> tuple[list[LabeledSnippet], list[Correction], list[LabelingIssue]]:
+    snippets, issues = exported_snippets(export_paths)
+    corrections = load_corrections(corrections_path)
+    if issues:
+        return [], corrections, issues
+    return apply_corrections(snippets, corrections), corrections, []
+
+
+def import_label_studio_export(
+    export_paths: Sequence[Path], output_path: Path, corrections_path: Path
+) -> list[LabelingIssue]:
+    snippets, corrections, issues = corrected_export(export_paths, corrections_path)
+    issues = issues or lint_issues(snippets, corrections)
     if not issues:
         write_test_set(output_path, snippets)
     return issues
+
+
+@dataclass(frozen=True, slots=True)
+class LabelReview:
+    snippet: LabeledSnippet
+    proposals: list[Correction]
+    undecided: list[LintFinding]
+
+
+def review_labels(
+    export_paths: Sequence[Path], corrections_path: Path
+) -> tuple[list[LabelReview], list[LabelingIssue]]:
+    snippets, corrections, issues = corrected_export(export_paths, corrections_path)
+    reviewed = reviewed_spans(corrections)
+    reviews = [
+        LabelReview(
+            snippet,
+            *propose_corrections(snippet, reviewed.get(snippet.snippet_id, set())),
+        )
+        for snippet in snippets
+    ]
+    return [
+        review for review in reviews if review.proposals or review.undecided
+    ], issues

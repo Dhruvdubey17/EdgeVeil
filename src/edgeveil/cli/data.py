@@ -8,10 +8,14 @@ from rich.table import Table
 from edgeveil.dataset.credentials import AUGMENTATION_SEED
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from edgeveil.dataset.prepare import PreparationReport
+    from edgeveil.evaluation.label_studio import LabelingIssue
 
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_TEST_SET_PATH = DEFAULT_DATA_DIR / "test" / "test_set.jsonl"
+DEFAULT_CORRECTIONS_PATH = DEFAULT_DATA_DIR / "test" / "corrections.jsonl"
 LABELING_ISSUES_EXIT_CODE = 1
 
 data_app = typer.Typer(help="Download and prepare training data.", no_args_is_help=True)
@@ -105,31 +109,26 @@ def gaps(
         console.print(table)
 
 
-@data_app.command(
-    name="import-labels",
-    help="Convert Label Studio JSON exports into the hand-labeled test set.",
-)
-def import_labels(
-    export_paths: Annotated[
-        list[Path],
-        typer.Argument(
-            help="Label Studio JSON exports, combined into one test set.",
-            exists=True,
-            dir_okay=False,
-            readable=True,
-        ),
-    ],
-    output: Annotated[
-        Path, typer.Option(help="Where to write the test set JSONL.")
-    ] = DEFAULT_TEST_SET_PATH,
-) -> None:
-    from edgeveil.evaluation.label_studio import import_label_studio_export
+ExportPaths = Annotated[
+    list[Path],
+    typer.Argument(
+        help="Label Studio JSON exports, combined into one test set.",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+]
+CorrectionsPath = Annotated[
+    Path,
+    typer.Option(
+        help="Label corrections applied on top of the exports. A missing file "
+        "means no corrections."
+    ),
+]
 
-    issues = import_label_studio_export(export_paths, output)
-    if not issues:
-        console.print(f"Wrote the test set to {output}.")
-        return
-    table = Table(title="Labeling issues (nothing written)")
+
+def print_issues(title: str, issues: "Sequence[LabelingIssue]") -> None:
+    table = Table(title=title)
     for column in ("Task", "Start", "End", "Problem"):
         table.add_column(column)
     for issue in issues:
@@ -137,7 +136,73 @@ def import_labels(
             str(issue.task_id), str(issue.start), str(issue.end), issue.problem
         )
     console.print(table)
+
+
+@data_app.command(
+    name="import-labels",
+    help="Convert Label Studio JSON exports into the hand-labeled test set, apply "
+    "label corrections, and check every span against the labeling rules.",
+)
+def import_labels(
+    export_paths: ExportPaths,
+    output: Annotated[
+        Path, typer.Option(help="Where to write the test set JSONL.")
+    ] = DEFAULT_TEST_SET_PATH,
+    corrections: CorrectionsPath = DEFAULT_CORRECTIONS_PATH,
+) -> None:
+    from edgeveil.evaluation.corrections import CorrectionError
+    from edgeveil.evaluation.label_studio import import_label_studio_export
+
+    try:
+        issues = import_label_studio_export(export_paths, output, corrections)
+    except CorrectionError as error:
+        console.print(f"Corrections failed, nothing written: {error}")
+        raise typer.Exit(code=LABELING_ISSUES_EXIT_CODE) from error
+    if not issues:
+        console.print(f"Wrote the test set to {output}.")
+        return
+    print_issues("Labeling issues (nothing written)", issues)
     raise typer.Exit(code=LABELING_ISSUES_EXIT_CODE)
+
+
+@data_app.command(
+    name="lint-labels",
+    help="Print every labeling-rule violation with the snippet text and a proposed "
+    "fix. The text goes to the terminal only.",
+)
+def lint_labels(
+    export_paths: ExportPaths,
+    corrections: CorrectionsPath = DEFAULT_CORRECTIONS_PATH,
+    write_proposals: Annotated[
+        bool,
+        typer.Option(help="Append the proposed fixes to the corrections file."),
+    ] = False,
+) -> None:
+    from edgeveil.evaluation.corrections import (
+        append_corrections,
+        correction_lines,
+        finding_lines,
+    )
+    from edgeveil.evaluation.label_studio import review_labels
+
+    reviews, issues = review_labels(export_paths, corrections)
+    if issues:
+        print_issues("Labeling issues", issues)
+        raise typer.Exit(code=LABELING_ISSUES_EXIT_CODE)
+    proposals = [p for review in reviews for p in review.proposals]
+    console.rule(f"Proposed corrections ({len(proposals)})")
+    for review in reviews:
+        for proposal in review.proposals:
+            for line in correction_lines(review.snippet, proposal):
+                console.print(line, markup=False, highlight=False)
+    undecided = [(r.snippet, f) for r in reviews for f in r.undecided]
+    console.rule(f"Needs a decision ({len(undecided)})")
+    for snippet, finding in undecided:
+        for line in finding_lines(snippet, finding):
+            console.print(line, markup=False, highlight=False)
+    if write_proposals:
+        append_corrections(corrections, proposals)
+        console.print(f"Appended {len(proposals)} corrections to {corrections}.")
 
 
 def report_rows(report: "PreparationReport") -> dict[str, int]:
