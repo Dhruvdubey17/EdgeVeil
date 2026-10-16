@@ -45,7 +45,7 @@ def test_defaults_match_the_spec() -> None:
 def test_special_token_frame_is_learned_from_the_tokenizer(
     tiny_tokenizer: PreTrainedTokenizerFast,
 ) -> None:
-    prefix, suffix = special_token_frame(tiny_tokenizer)
+    prefix, suffix = special_token_frame(tiny_tokenizer.backend_tokenizer)
     assert tiny_tokenizer.convert_ids_to_tokens(prefix + suffix) == ["[CLS]", "[SEP]"]
 
 
@@ -54,7 +54,9 @@ def test_long_text_is_split_into_framed_overlapping_windows(
 ) -> None:
     words = [f"w{index}" for index in range(30)]
     text = " ".join(words)
-    windows = encode_windows(tiny_tokenizer, [text], max_tokens=8, overlap=2)[0]
+    windows = encode_windows(
+        tiny_tokenizer.backend_tokenizer, [text], max_tokens=8, overlap=2
+    )[0]
     assert len(windows) > 2
     seen: set[str] = set()
     for window in windows:
@@ -73,7 +75,7 @@ def test_long_text_is_split_into_framed_overlapping_windows(
 def test_empty_text_yields_one_framed_window(
     tiny_tokenizer: PreTrainedTokenizerFast,
 ) -> None:
-    [window] = encode_windows(tiny_tokenizer, [""])[0]
+    [window] = encode_windows(tiny_tokenizer.backend_tokenizer, [""])[0]
     assert tiny_tokenizer.convert_ids_to_tokens(window.input_ids) == ["[CLS]", "[SEP]"]
 
 

@@ -71,7 +71,7 @@ def test_training_batch_labels_decode_back_to_the_spans(
         {"source_text": [TEXT], "spans": [SPANS]}, tokenizer=tiny_tokenizer
     )
     [labels] = encoded["labels"]
-    [window] = encode_windows(tiny_tokenizer, [TEXT])[0]
+    [window] = encode_windows(tiny_tokenizer.backend_tokenizer, [TEXT])[0]
     assert encoded["input_ids"] == [window.input_ids]
     assert decode_label_ids(labels, window.offsets) == [
         GoldSpan(0, 9, EntityType.PERSON),

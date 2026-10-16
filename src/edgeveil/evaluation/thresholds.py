@@ -4,18 +4,17 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import torch
 from datasets import Dataset
-from numpy.typing import NDArray
 
 from edgeveil.bench.environment import environment_record
 from edgeveil.dataset.augment import labeled_text, openpii_augmented_dir
 from edgeveil.dataset.openpii import OPENPII_REVISION
 from edgeveil.detector.decoding import logits_to_spans, uniform_thresholds
+from edgeveil.detector.inference import per_text_logits
 from edgeveil.detector.metrics import EntityScores
 from edgeveil.detector.torch_backend import TorchDetector
-from edgeveil.detector.windows import Window, encode_windows
+from edgeveil.detector.windows import encode_windows
 from edgeveil.evaluation.scoring import content_offsets, score_emitted_spans
 from edgeveil.spans import EntityType, GoldSpan, LabeledText
 
@@ -81,19 +80,6 @@ def load_tuning_rows(data_dir: Path, limit: int | None) -> list[LabeledText]:
     return [labeled_text(record) for record in rows.to_list()]
 
 
-def per_text_logits(
-    detector: TorchDetector, per_text_windows: Sequence[Sequence[Window]]
-) -> list[list[NDArray[np.float32]]]:
-    flat = [window for windows in per_text_windows for window in windows]
-    flat_logits = detector.window_logits(flat)
-    grouped: list[list[NDArray[np.float32]]] = []
-    cursor = 0
-    for windows in per_text_windows:
-        grouped.append(flat_logits[cursor : cursor + len(windows)])
-        cursor += len(windows)
-    return grouped
-
-
 def tune_thresholds(
     model_dir: Path,
     data_dir: Path,
@@ -105,7 +91,7 @@ def tune_thresholds(
     texts = [row.text for row in rows]
     gold: list[Sequence[GoldSpan]] = [row.spans for row in rows]
     per_text_windows = encode_windows(detector.tokenizer, texts)
-    logits = per_text_logits(detector, per_text_windows)
+    logits = per_text_logits(per_text_windows, detector.window_logits)
     offsets = content_offsets(detector.tokenizer, texts)
     curves: dict[EntityType, list[ThresholdPoint]] = {
         entity: [] for entity in EntityType

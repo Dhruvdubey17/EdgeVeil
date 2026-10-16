@@ -1,13 +1,15 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
-from transformers import PreTrainedTokenizerBase
+from tokenizers import Tokenizer
 
 from edgeveil.detector.alignment import SPECIAL_TOKEN_OFFSET, Offset
 
 MAX_WINDOW_TOKENS = 512
 WINDOW_OVERLAP_TOKENS = 128
 FRAME_PROBE_TEXT = "a"
+TOKENIZER_FILE_NAME = "tokenizer.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,11 +38,13 @@ class WindowLayout:
         return self.max_tokens - len(self.prefix) - len(self.suffix)
 
 
-def special_token_frame(
-    tokenizer: PreTrainedTokenizerBase,
-) -> tuple[list[int], list[int]]:
-    framed = tokenizer(FRAME_PROBE_TEXT)["input_ids"]
-    bare = tokenizer(FRAME_PROBE_TEXT, add_special_tokens=False)["input_ids"]
+def load_tokenizer(model_dir: Path) -> Tokenizer:
+    return Tokenizer.from_file(str(model_dir / TOKENIZER_FILE_NAME))
+
+
+def special_token_frame(tokenizer: Tokenizer) -> tuple[list[int], list[int]]:
+    framed = tokenizer.encode(FRAME_PROBE_TEXT).ids
+    bare = tokenizer.encode(FRAME_PROBE_TEXT, add_special_tokens=False).ids
     for start in range(len(framed) - len(bare) + 1):
         if framed[start : start + len(bare)] == bare:
             return framed[:start], framed[start + len(bare) :]
@@ -79,22 +83,15 @@ def frame_windows(
 
 
 def encode_windows(
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: Tokenizer,
     texts: Sequence[str],
     max_tokens: int = MAX_WINDOW_TOKENS,
     overlap: int = WINDOW_OVERLAP_TOKENS,
 ) -> list[list[Window]]:
     prefix, suffix = special_token_frame(tokenizer)
     layout = WindowLayout(prefix, suffix, max_tokens, overlap)
-    encoded = tokenizer(
-        list(texts),
-        add_special_tokens=False,
-        return_offsets_mapping=True,
-        verbose=False,
-    )
+    encoded = tokenizer.encode_batch(list(texts), add_special_tokens=False)
     return [
-        frame_windows(text, ids, offsets, layout)
-        for text, ids, offsets in zip(
-            texts, encoded["input_ids"], encoded["offset_mapping"], strict=True
-        )
+        frame_windows(text, encoding.ids, encoding.offsets, layout)
+        for text, encoding in zip(texts, encoded, strict=True)
     ]

@@ -52,7 +52,7 @@ def test_window_logits_have_one_row_per_token(
     model_dir: Path, tiny_tokenizer: PreTrainedTokenizerFast
 ) -> None:
     detector = TorchDetector(model_dir, device=torch.device("cpu"))
-    windows = encode_windows(tiny_tokenizer, [TEXT, "Ada"])
+    windows = encode_windows(tiny_tokenizer.backend_tokenizer, [TEXT, "Ada"])
     flat = [window for text_windows in windows for window in text_windows]
     logits = detector.window_logits(flat)
     assert [row.shape for row in logits] == [
@@ -66,7 +66,7 @@ def test_batched_logits_match_single_window_logits(
     detector = TorchDetector(model_dir, device=torch.device("cpu"))
     windows = [
         window
-        for text in encode_windows(tiny_tokenizer, [TEXT, "Ada now"])
+        for text in encode_windows(tiny_tokenizer.backend_tokenizer, [TEXT, "Ada now"])
         for window in text
     ]
     together = detector.window_logits(windows)

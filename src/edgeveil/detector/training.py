@@ -16,7 +16,7 @@ from transformers import (
     DataCollatorForTokenClassification,
     EvalPrediction,
     PreTrainedModel,
-    PreTrainedTokenizerBase,
+    PreTrainedTokenizerFast,
     Trainer,
     TrainerCallback,
     TrainerControl,
@@ -81,13 +81,13 @@ def spans_from_records(records: Iterable[Mapping[str, Any]]) -> list[GoldSpan]:
 
 
 def encode_training_batch(
-    batch: Mapping[str, list[Any]], tokenizer: PreTrainedTokenizerBase
+    batch: Mapping[str, list[Any]], tokenizer: PreTrainedTokenizerFast
 ) -> dict[str, list[Any]]:
     texts: list[str] = batch["source_text"]
     input_ids: list[list[int]] = []
     labels: list[list[int]] = []
     for windows, span_records in zip(
-        encode_windows(tokenizer, texts), batch["spans"], strict=True
+        encode_windows(tokenizer.backend_tokenizer, texts), batch["spans"], strict=True
     ):
         spans = spans_from_records(span_records)
         for window in windows:
@@ -102,7 +102,7 @@ def encode_training_batch(
 
 
 def windowed_split(
-    data_dir: Path, split: str, tokenizer: PreTrainedTokenizerBase
+    data_dir: Path, split: str, tokenizer: PreTrainedTokenizerFast
 ) -> Dataset:
     augmented_dir = openpii_augmented_dir(data_dir)
     rows = Dataset.from_parquet(
@@ -233,7 +233,7 @@ def accelerator_name(device: torch.device) -> str:
 
 def build_trainer(
     model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: PreTrainedTokenizerFast,
     datasets: SplitDatasets,
     config: TrainingConfig,
     options: RunOptions,
@@ -256,7 +256,7 @@ def build_trainer(
 
 def load_base_model(
     config: TrainingConfig,
-) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
+) -> tuple[PreTrainedModel, PreTrainedTokenizerFast]:
     set_seed(TRAINING_SEED)
     tokenizer = AutoTokenizer.from_pretrained(
         config.base_model, revision=config.revision

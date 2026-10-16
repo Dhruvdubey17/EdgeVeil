@@ -47,7 +47,7 @@ def test_grid_spans_the_open_unit_interval() -> None:
 def test_emitted_spans_are_scored_with_strict_iob2(
     tiny_tokenizer: PreTrainedTokenizerFast,
 ) -> None:
-    offsets = content_offsets(tiny_tokenizer, [TEXT])
+    offsets = content_offsets(tiny_tokenizer.backend_tokenizer, [TEXT])
     perfect = score_emitted_spans([GOLD], [as_emitted(GOLD)], offsets)
     assert perfect["PERSON"].recall == pytest.approx(1.0)
     assert perfect["EMAIL"].precision == pytest.approx(1.0)
