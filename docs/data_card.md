@@ -30,4 +30,4 @@ Row and span counts come from `edgeveil data prepare`, which writes them to `dat
 
 ## Test data
 
-A hand-labeled set of about 200 snippets written for this project, labeled in Label Studio under `docs/labeling.md`. It contains only self-written synthetic values, including hand-written credentials. It is never used for training or threshold tuning.
+235 snippets written for this project and labeled by hand in Label Studio under `docs/labeling.md`: 377 spans, with at least 40 of each entity type, and 40 snippets that contain no entity. It contains only self-written synthetic values, including hand-written credentials. It is never used for training or threshold tuning.
