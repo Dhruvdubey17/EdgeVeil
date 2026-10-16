@@ -1,0 +1,484 @@
+{
+  "detection": "combined",
+  "preset": "distilbert",
+  "model_dir": "models/distilbert",
+  "model_sha256": "c0eafef1bf82eec0c88765986160ff0874b2a74812e717fb4918a5549b502c06",
+  "thresholds_sha256": "6d2804910f9e2c0c5c802aa33bc5da1f5f055924a2698bca31a4a5e27348a39a",
+  "base_model": "distilbert/distilbert-base-cased",
+  "base_model_revision": "6ea81172465e8b0ad3fddeed32b986cdcdcffcf0",
+  "training_dataset_revision": "a785eb528e28be2693c3718a27e066970de5dadb",
+  "trained_on": "Tesla T4",
+  "precision": "int4-per-channel",
+  "backend": "coreml-ane",
+  "compute_units": "all",
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "coreml-ane",
+    "precision": "int4-per-channel",
+    "compute_units": "all",
+    "path": "models/distilbert/coreml-ane/int4-per-channel.mlpackage",
+    "sha256": "36c47ad5d61d1ae5bd27c57088fbb63d3fbf8a2693663b5893ee98a758312e94",
+    "size_bytes": 33023402,
+    "quantization": "Neural Engine layout, INT4 weights per channel"
+  },
+  "test_set": {
+    "path": "data/test/test_set.jsonl",
+    "sha256": "b55e26ee4db2d7a1d75276962cd0cc79ff49a1ffbd66c40c41827db62f9e0247",
+    "snippets": 235,
+    "spans_by_type": {
+      "ADDRESS": 47,
+      "CREDENTIAL": 40,
+      "CREDIT_CARD": 40,
+      "EMAIL": 43,
+      "GOV_ID": 43,
+      "PERSON": 75,
+      "PHONE": 42,
+      "SSN": 44
+    }
+  },
+  "thresholds_file": "bench/results/thresholds/distilbert-fp32-torch.json",
+  "thresholds": {
+    "PERSON": 0.8,
+    "EMAIL": 0.95,
+    "PHONE": 0.75,
+    "ADDRESS": 0.85,
+    "CREDENTIAL": 0.95,
+    "SSN": 0.55,
+    "CREDIT_CARD": 0.65,
+    "GOV_ID": 0.55
+  },
+  "scoring": "final emitted spans re-encoded as IOB2, seqeval strict mode",
+  "secondary_scoring": {
+    "overlap": "a span matches if it overlaps a span of the same type",
+    "char_recall": "share of gold span characters covered by any emitted span"
+  },
+  "bootstrap": {
+    "unit": "snippet",
+    "resamples": 1000,
+    "seed": 1006,
+    "confidence_level": 0.95
+  },
+  "scores": {
+    "PERSON": {
+      "precision": {
+        "value": 0.9103,
+        "low": 0.8406,
+        "high": 0.9722
+      },
+      "recall": {
+        "value": 0.9467,
+        "low": 0.8889,
+        "high": 0.9868
+      },
+      "f1": {
+        "value": 0.9281,
+        "low": 0.8827,
+        "high": 0.9655
+      },
+      "support": 75
+    },
+    "EMAIL": {
+      "precision": {
+        "value": 0.9556,
+        "low": 0.8864,
+        "high": 1.0
+      },
+      "recall": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      },
+      "f1": {
+        "value": 0.9773,
+        "low": 0.9398,
+        "high": 1.0
+      },
+      "support": 43
+    },
+    "PHONE": {
+      "precision": {
+        "value": 0.8409,
+        "low": 0.7021,
+        "high": 0.9474
+      },
+      "recall": {
+        "value": 0.881,
+        "low": 0.7727,
+        "high": 0.9737
+      },
+      "f1": {
+        "value": 0.8605,
+        "low": 0.74,
+        "high": 0.9474
+      },
+      "support": 42
+    },
+    "ADDRESS": {
+      "precision": {
+        "value": 0.4444,
+        "low": 0.3267,
+        "high": 0.5672
+      },
+      "recall": {
+        "value": 0.766,
+        "low": 0.65,
+        "high": 0.88
+      },
+      "f1": {
+        "value": 0.5625,
+        "low": 0.4423,
+        "high": 0.678
+      },
+      "support": 47
+    },
+    "CREDENTIAL": {
+      "precision": {
+        "value": 0.7857,
+        "low": 0.6399,
+        "high": 0.9286
+      },
+      "recall": {
+        "value": 0.55,
+        "low": 0.4,
+        "high": 0.7
+      },
+      "f1": {
+        "value": 0.6471,
+        "low": 0.5098,
+        "high": 0.7587
+      },
+      "support": 40
+    },
+    "SSN": {
+      "precision": {
+        "value": 0.7636,
+        "low": 0.6338,
+        "high": 0.875
+      },
+      "recall": {
+        "value": 0.9545,
+        "low": 0.8958,
+        "high": 1.0
+      },
+      "f1": {
+        "value": 0.8485,
+        "low": 0.755,
+        "high": 0.9143
+      },
+      "support": 44
+    },
+    "CREDIT_CARD": {
+      "precision": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      },
+      "recall": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      },
+      "f1": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      },
+      "support": 40
+    },
+    "GOV_ID": {
+      "precision": {
+        "value": 0.7297,
+        "low": 0.5484,
+        "high": 0.9001
+      },
+      "recall": {
+        "value": 0.6279,
+        "low": 0.4643,
+        "high": 0.7751
+      },
+      "f1": {
+        "value": 0.675,
+        "low": 0.5185,
+        "high": 0.8056
+      },
+      "support": 43
+    },
+    "overall": {
+      "precision": {
+        "value": 0.7794,
+        "low": 0.7245,
+        "high": 0.8297
+      },
+      "recall": {
+        "value": 0.8503,
+        "low": 0.8136,
+        "high": 0.8857
+      },
+      "f1": {
+        "value": 0.8133,
+        "low": 0.7698,
+        "high": 0.8521
+      },
+      "support": 374
+    }
+  },
+  "secondary_scores": {
+    "PERSON": {
+      "overlap_precision": {
+        "value": 0.9103,
+        "low": 0.8406,
+        "high": 0.9722
+      },
+      "overlap_recall": {
+        "value": 0.9467,
+        "low": 0.8889,
+        "high": 0.9868
+      },
+      "char_recall": {
+        "value": 0.9496,
+        "low": 0.8907,
+        "high": 0.9934
+      }
+    },
+    "EMAIL": {
+      "overlap_precision": {
+        "value": 0.9556,
+        "low": 0.8864,
+        "high": 1.0
+      },
+      "overlap_recall": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      },
+      "char_recall": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      }
+    },
+    "PHONE": {
+      "overlap_precision": {
+        "value": 0.9318,
+        "low": 0.8298,
+        "high": 1.0
+      },
+      "overlap_recall": {
+        "value": 0.9762,
+        "low": 0.921,
+        "high": 1.0
+      },
+      "char_recall": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      }
+    },
+    "ADDRESS": {
+      "overlap_precision": {
+        "value": 0.6914,
+        "low": 0.5823,
+        "high": 0.7857
+      },
+      "overlap_recall": {
+        "value": 0.9574,
+        "low": 0.8936,
+        "high": 1.0
+      },
+      "char_recall": {
+        "value": 0.9439,
+        "low": 0.8957,
+        "high": 0.9783
+      }
+    },
+    "CREDENTIAL": {
+      "overlap_precision": {
+        "value": 0.8571,
+        "low": 0.7307,
+        "high": 0.9667
+      },
+      "overlap_recall": {
+        "value": 0.6,
+        "low": 0.4593,
+        "high": 0.75
+      },
+      "char_recall": {
+        "value": 0.803,
+        "low": 0.6747,
+        "high": 0.9057
+      }
+    },
+    "SSN": {
+      "overlap_precision": {
+        "value": 0.7636,
+        "low": 0.6338,
+        "high": 0.875
+      },
+      "overlap_recall": {
+        "value": 0.9545,
+        "low": 0.8958,
+        "high": 1.0
+      },
+      "char_recall": {
+        "value": 0.9829,
+        "low": 0.9589,
+        "high": 1.0
+      }
+    },
+    "CREDIT_CARD": {
+      "overlap_precision": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      },
+      "overlap_recall": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      },
+      "char_recall": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      }
+    },
+    "GOV_ID": {
+      "overlap_precision": {
+        "value": 0.9189,
+        "low": 0.8157,
+        "high": 1.0
+      },
+      "overlap_recall": {
+        "value": 0.7442,
+        "low": 0.6037,
+        "high": 0.8637
+      },
+      "char_recall": {
+        "value": 0.833,
+        "low": 0.726,
+        "high": 0.9301
+      }
+    },
+    "overall": {
+      "overlap_precision": {
+        "value": 0.8603,
+        "low": 0.8222,
+        "high": 0.8923
+      },
+      "overlap_recall": {
+        "value": 0.9037,
+        "low": 0.8743,
+        "high": 0.9309
+      },
+      "char_recall": {
+        "value": 0.9365,
+        "low": 0.9126,
+        "high": 0.9579
+      }
+    }
+  },
+  "errors": {
+    "misses": {
+      "PERSON": {
+        "missed": 4,
+        "boundary": 0,
+        "wrong_type": 0
+      },
+      "EMAIL": {
+        "missed": 0,
+        "boundary": 0,
+        "wrong_type": 0
+      },
+      "PHONE": {
+        "missed": 0,
+        "boundary": 4,
+        "wrong_type": 1
+      },
+      "ADDRESS": {
+        "missed": 2,
+        "boundary": 9,
+        "wrong_type": 0
+      },
+      "CREDENTIAL": {
+        "missed": 8,
+        "boundary": 2,
+        "wrong_type": 8
+      },
+      "SSN": {
+        "missed": 2,
+        "boundary": 0,
+        "wrong_type": 0
+      },
+      "CREDIT_CARD": {
+        "missed": 0,
+        "boundary": 0,
+        "wrong_type": 0
+      },
+      "GOV_ID": {
+        "missed": 4,
+        "boundary": 5,
+        "wrong_type": 7
+      }
+    },
+    "false_positives": {
+      "PERSON": {
+        "spurious": 5,
+        "boundary": 0,
+        "wrong_type": 2
+      },
+      "EMAIL": {
+        "spurious": 0,
+        "boundary": 0,
+        "wrong_type": 2
+      },
+      "PHONE": {
+        "spurious": 0,
+        "boundary": 4,
+        "wrong_type": 3
+      },
+      "ADDRESS": {
+        "spurious": 17,
+        "boundary": 20,
+        "wrong_type": 8
+      },
+      "CREDENTIAL": {
+        "spurious": 4,
+        "boundary": 2,
+        "wrong_type": 0
+      },
+      "SSN": {
+        "spurious": 4,
+        "boundary": 0,
+        "wrong_type": 9
+      },
+      "CREDIT_CARD": {
+        "spurious": 0,
+        "boundary": 0,
+        "wrong_type": 0
+      },
+      "GOV_ID": {
+        "spurious": 2,
+        "boundary": 7,
+        "wrong_type": 1
+      }
+    }
+  },
+  "environment": {
+    "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "datasets": "5.1.0",
+      "seqeval": "1.2.2",
+      "onnxruntime": "1.30.0",
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
+    }
+  }
+}

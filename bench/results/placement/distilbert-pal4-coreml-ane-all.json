@@ -1,0 +1,63 @@
+{
+  "precision": "pal4",
+  "backend": "coreml-ane",
+  "compute_units": "all",
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "coreml-ane",
+    "precision": "pal4",
+    "compute_units": "all",
+    "path": "models/distilbert/coreml-ane/pal4.mlpackage",
+    "sha256": "f5970d19de79a19af4117caa45637fa8c21a4a483801e2632dcd08bbccf5d27c",
+    "size_bytes": 32884052,
+    "quantization": "Neural Engine layout, 4-bit k-means palettized weights"
+  },
+  "source": "coremltools MLComputePlan: preferred compute device per ML Program operation in the main function; operations without a device usage are counted as unassigned and left out of the shares; operators_unsupported_on_neural_engine counts operations whose supported devices exclude the Neural Engine",
+  "operations": 416,
+  "unassigned_operations": 550,
+  "by_device": {
+    "unassigned": 550,
+    "cpu": 12,
+    "neural_engine": 404
+  },
+  "cost_by_device": {
+    "cpu": 0.1483,
+    "neural_engine": 0.6326
+  },
+  "neural_engine_share": 0.9711538461538461,
+  "neural_engine_cost_share": 0.8100592127268595,
+  "operators_off_neural_engine": {
+    "cpu": {
+      "ios18.cast": 5,
+      "ios18.greater_equal": 2,
+      "ios18.add": 2,
+      "select": 2,
+      "ios18.gather": 1
+    }
+  },
+  "operators_unsupported_on_neural_engine": {
+    "ios18.cast": 5,
+    "ios18.greater_equal": 2,
+    "ios18.add": 2,
+    "select": 2,
+    "ios18.gather": 1
+  },
+  "environment": {
+    "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "datasets": "5.1.0",
+      "seqeval": "1.2.2",
+      "onnxruntime": "1.30.0",
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
+    }
+  }
+}

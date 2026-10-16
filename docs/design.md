@@ -493,7 +493,7 @@ Latency of the Neural Engine layout (same machine and method as the latency sect
 | int4 | all | 11.57 / 12.47 | 16.07 / 16.42 | 26.47 / 27.09 |
 | int4 | cpu-and-ne | 28.15 / 28.39 | 64.46 / 64.81 | 145.92 / 146.46 |
 
-- fp16 on the Neural Engine runs a 512-token window in 6.38 ms at p95, against the spec target of 50 ms. That is 4.0x faster than the fastest v1 Core ML CPU build (25.94 ms, cpu-only) and 25x faster than ONNX Runtime fp32 on the CPU (162.63 ms).
+- fp16 on the Neural Engine runs a 512-token window in 6.38 ms at p95, against the spec target of 50 ms. The comparison against the fastest CPU path is in the section on baselines below.
 - int8 is slightly faster than fp16 at 512 tokens (5.50 against 6.38 ms p95) and loses 0.003 dev-test F1.
 - At 128 tokens the p95 is well above the p50 for several settings (int8 cpu-and-ne 1.28 / 3.84 ms). The timings files keep all 200 calls; the spread has not been investigated.
 - int4 does not reach the Neural Engine (placement above): on all it runs on the GPU at 27.09 ms p95, and on cpu-and-ne it falls back to the CPU at 146.46 ms.
@@ -509,8 +509,85 @@ Latency of the Neural Engine layout (same machine and method as the latency sect
 | coreml-ane fp16 | cpu-only | 42.9 | 9,343 / 0 / 0 | 216.6 |
 | onnxruntime int8-dynamic | n/a | 13.6 | 13,601 / 14 / 0 | 986.4 |
 
-- On the Neural Engine a window costs 47.9 mJ above idle: 4.4x less than the same model on the GPU and 4.5x less than on the CPU, and 20.6x less than the fastest ONNX Runtime CPU build.
+- On the Neural Engine a window costs 47.9 mJ above idle: 4.4x less than the same package on the GPU (211.3 mJ) and 4.5x less than on the CPU (216.6 mJ), and 20.6x less than ONNX Runtime int8-dynamic (986.4 mJ). All four are rows of `bench/results/tables/accuracy-latency.md`; the three Core ML rows are the same package (SHA-256 d9620925...).
 - The parser was written before a real log existed; checked against this one: the keys are `processor.cpu_power`, `gpu_power`, and `ane_power` as assumed, each equals its `*_energy` field divided by `elapsed_ns` (so the unit is mW), and accumulated `elapsed_ns` (428.7 s) matches the timestamp span (428 s), within the 2 s edge trim.
 - Loop throughput agrees with the latency runs: 159.4 windows per second is 6.27 ms per window on the Neural Engine (latency p50 6.33 ms), and 13.6 per second is 73.5 ms for ONNX int8-dynamic (p50 75.99 ms).
 - These are the rail estimates `powermetrics` reports for CPU, GPU, and Neural Engine. They leave out DRAM and the rest of the system, and they are not a wall-power measurement.
 - Idle power differed between loops (28 to 152 mW CPU); the above-idle column subtracts each loop's own idle phase.
+
+## Why v1 fp16 is slower with compute units all
+
+v1 fp16 takes 117.8 ms p50 at 512 tokens with compute units all and 25.7 ms with cpu-only, although both place every operation on the CPU. What the compute plan shows (`bench/results/placement/distilbert-fp16-coreml-*.json` and a one-off read of the same plans):
+
+| Compute units | Operations | Preferred device | Operations with a cost estimate | Operations listing the Neural Engine as supported |
+|---|---|---|---|---|
+| all | 230 | cpu, all 230 | 0 | 184 |
+| cpu-and-ne | 230 | cpu, all 230 | 0 | 184 |
+| cpu-only | 231 | cpu, all 231 | 231 | 0 |
+| cpu-and-gpu | 231 | gpu, all 231 | 231 | 0 |
+
+- Whenever the Neural Engine is allowed, the plan is a different plan: one operation fewer, no cost estimate for any operation, and 184 operations marked as Neural Engine capable but none placed there. all and cpu-and-ne then run at the same speed (117.2 and 117.1 ms in the diagnostic).
+- The plan does not report compute precision. The parity runs do show a difference: with all, the fp16 package is closer to fp32 torch (largest logit difference 0.021) than with cpu-only (0.226). Together with the speed difference, this is consistent with the Neural Engine-enabled path running its CPU fallback at higher precision and cpu-only running in FP16, but neither the plan nor the logs confirm it.
+- The Neural Engine layout does not have this problem: its operations are placed on the Neural Engine, so the fallback path is not used.
+
+## INT8 static: activation ranges
+
+`edgeveil bench activation-ranges` reads each activation's calibrated range and step from the QuantizeLinear nodes of the int8-static build and measures the FP32 magnitudes of the same tensors on the same 300 calibration windows (`bench/results/quantization/distilbert-int8-static-onnxruntime.json`, 234 activations; the 235th is the renamed logits output).
+
+First, padding was ruled out. Calibration ran at batch size 1 with no padding while evaluation pads batches of up to 32, and the mask construction (`Where`) is quantized. On 600 parity windows, int8-static agrees with fp32 torch on 0.9867 of entity tokens at batch size 1 and 0.9873 in padded batches of 32, so padding is not the cause. (int8-dynamic: 0.9979 and 0.9984.)
+
+Largest outliers, by max over the 99.9th percentile magnitude:
+
+| Layer | Tensor | Calibrated range | Step | Max | 99.9th pct | Median | Median in steps |
+|---|---|---|---|---|---|---|---|
+| block 4 | FFN output projection | [-524, 78] | 2.36 | 524 | 2.83 | 0.44 | 0.19 |
+| block 1 | FFN output projection | [-17, 211] | 0.89 | 211 | 1.82 | 0.28 | 0.31 |
+| block 2 | FFN output projection | [-16, 187] | 0.80 | 188 | 1.80 | 0.25 | 0.32 |
+| block 3 | FFN output projection | [-204, 5] | 0.82 | 205 | 2.01 | 0.29 | 0.35 |
+| block 4 | residual add after FFN | [-579, 77] | 2.57 | 578 | 13.6 | 0.75 | 0.29 |
+| block 0 | FFN output projection | [-13, 33] | 0.18 | 33 | 2.53 | 0.35 | 1.90 |
+
+- The feed-forward output projection in blocks 1 to 4 produces a few values of 188 to 525 while 99.9% of values stay under about 3 (ratios 100 to 185). MinMax stretches the INT8 range to cover them, so one step is 0.8 to 2.4 and the median value is a fifth to a third of a step: most of that tensor quantizes to zero before the residual add and LayerNorm. Blocks 0 and 5 do not show this: their worst ratios are 13.0 and 6.7.
+- Softmax outputs have a step of 1/255. The median attention weight is below one step in blocks 1 to 5 (0.01 to 0.23 steps; block 0 is at 1.1), so most small attention probabilities become exactly 0.
+- int8-dynamic quantizes neither tensor: it quantizes only the inputs of the 37 weight MatMuls, with ranges taken per batch, and keeps the attention MatMuls in floating point. It loses 0.013 F1 against 0.110 for int8-static.
+- So outliers in the FFN outputs of blocks 1 to 4, and the coarse softmax, are consistent with the accuracy drop and the entity-token disagreements. No build that excludes those tensors was made to confirm it; per the plan this is not fixed in ONNX Runtime and carries into the Snapdragon INT8 work in milestone 3.
+
+## Baselines: Neural Engine against the fastest CPU path
+
+The fastest CPU path on this machine is Core ML, not ONNX Runtime: the Neural Engine layout fp16 package with compute units cpu-only runs a 512-token window in 23.45 / 23.57 ms (p50 / p95), against 156.36 / 162.63 ms for ONNX Runtime fp32 and 75.99 / 78.85 ms for ONNX Runtime int8-dynamic. Same package, three devices (rows of the accuracy-latency table):
+
+| Compute units | Device per plan | p95 ms, 512 tokens | mJ per window, above idle | F1, model |
+|---|---|---|---|---|
+| cpu-and-ne | Neural Engine (404 of 412 ops) | 6.38 | 47.9 | 0.727 |
+| cpu-and-gpu | GPU | 23.09 | 211.3 | 0.729 |
+| cpu-only | CPU | 23.57 | 216.6 | 0.730 |
+
+- Against the fastest CPU path, the Neural Engine is 3.7x faster and uses 4.5x less energy per window for the same weights. Against ONNX Runtime fp32 it is 25x faster. `edgeveil bench` prints the fastest-against-fastest comparison under the table; with the 4-bit builds below it is int4-per-channel on cpu-and-ne (5.32 ms) against fp16 cpu-only (23.57 ms), 4.4x.
+- Why Core ML's CPU path is 6.7x faster than ONNX Runtime fp32 on the same CPU. One window is 24.2 billion multiply-accumulates (48.3 GFLOP, counted from the model config), so Core ML cpu-only sustains about 2.1 TFLOP/s and ONNX Runtime fp32 about 0.31 TFLOP/s. The evidence:
+  - Precision: with cpu-only, the fp16 package's largest logit difference from fp32 torch is 0.23, against 0.02 on the GPU and 0.06 on the Neural Engine. That deviation is what FP16 arithmetic produces; ONNX Runtime fp32 computes in FP32.
+  - Compute, not memory: v1 cpu-only runs at 25.69 to 25.70 ms whether the weights are fp16 (130.5 MB), int8 (65.5 MB), or int4 (36.9 MB), so weight bandwidth does not set its speed.
+  - Throughput: about 2.1 TFLOP/s is above what NEON FMA on the four performance cores can reach in FP16 by the commonly cited core width and clock (four 128-bit FMA pipes at about 4 GHz, roughly 1 TFLOP/s; an estimate, not measured here). That is consistent with Core ML's CPU path using Apple's matrix units through Accelerate, while ONNX Runtime's CPU kernels use NEON. Which units ran is not observable from this setup, so this part is inference.
+  - Power: the Core ML CPU loop drew 9.3 W of CPU power at 42.9 windows per second; ONNX Runtime int8-dynamic drew 13.6 W at 13.6 windows per second.
+
+## INT4 on the Neural Engine
+
+The block-quantized int4 build never placed on the Neural Engine. Two more 4-bit variants of the Neural Engine layout, both from the same fp16 package:
+
+- `int4-per-channel`: `OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int4", granularity="per_channel")`, 33.0 MB.
+- `pal4`: 4-bit palettization, `OpPalettizerConfig(nbits=4, mode="kmeans", granularity="per_tensor")`, 32.9 MB (16-entry lookup table per weight tensor).
+
+| Build | Compute units | Neural Engine ops | Token agreement | Entity token agreement | F1, model (95% CI) | F1, model and validators | p50 / p95 ms, 512 tokens |
+|---|---|---|---|---|---|---|---|
+| int4 (blocks of 32) | cpu-and-ne | 0 of 415 | 0.9994 | 0.9987 | 0.696 [0.642, 0.744] | 0.812 | 145.92 / 146.46 |
+| int4-per-channel | all | 404 of 416 | 0.9986 | 0.9961 | 0.699 [0.644, 0.749] | 0.813 | 5.28 / 5.50 |
+| int4-per-channel | cpu-and-ne | 404 of 416 | 0.9986 | 0.9961 | 0.699 [0.644, 0.749] | 0.813 | 5.28 / 5.32 |
+| pal4 | all | 404 of 416 | 0.9988 | 0.9975 | 0.716 [0.665, 0.760] | 0.833 | 6.37 / 6.42 |
+| pal4 | cpu-and-ne | 404 of 416 | 0.9988 | 0.9975 | 0.716 [0.665, 0.760] | 0.833 | 6.38 / 6.44 |
+
+- Both variants place on the Neural Engine exactly like int8 (404 of 416; the same 12 embedding operations stay on the CPU). The blocker for int4 was the per-block granularity, not the bit width.
+- pal4 keeps more accuracy: 0.716 against 0.699 model-only, and 0.833 with validators, equal to fp16 on the Neural Engine (0.833). int4-per-channel is the fastest build measured (5.32 ms p95), pal4 runs at fp16 speed (6.44 ms).
+- Energy for these builds is not measured; it needs another sudo run of `scripts/measure_power.sh` with them added.
+
+## Repository size check
+
+No model or data file is tracked or in history: the largest tracked file is `uv.lock` (216 KB), the largest blob in any commit is 224 KB, and no `.onnx`, `.data`, plist, `.mlpackage`, `data/`, or `models/` path appears in `git rev-list --objects --all`. The two files ONNX Runtime's failed shape inference wrote into the working directory were moved to the Trash before any commit. `git count-objects -vH` before this wrap-up: 991 loose objects, 4.45 MiB, no packs.

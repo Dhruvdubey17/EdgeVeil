@@ -1,0 +1,52 @@
+{
+  "precision": "pal4",
+  "backend": "coreml-ane",
+  "compute_units": "cpu-and-ne",
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "coreml-ane",
+    "precision": "pal4",
+    "compute_units": "cpu-and-ne",
+    "path": "models/distilbert/coreml-ane/pal4.mlpackage",
+    "sha256": "f5970d19de79a19af4117caa45637fa8c21a4a483801e2632dcd08bbccf5d27c",
+    "size_bytes": 32884052,
+    "quantization": "Neural Engine layout, 4-bit k-means palettized weights"
+  },
+  "model_sha256": "c0eafef1bf82eec0c88765986160ff0874b2a74812e717fb4918a5549b502c06",
+  "reference": "torch fp32 on CPU, same tokenizer and windows",
+  "agreement": "share of non-special tokens whose highest-scoring BIO label matches the reference; entity agreement counts only tokens the reference labels as an entity",
+  "sample": {
+    "split": "validation",
+    "seed": 20261016,
+    "windows": 2000,
+    "rows_considered": 4000,
+    "disjoint_from_calibration": true
+  },
+  "parity": {
+    "windows": 2000,
+    "tokens": 192275,
+    "token_agreement": 0.998752,
+    "reference_entity_tokens": 59252,
+    "entity_token_agreement": 0.997468,
+    "max_abs_logit_difference": 5.087918,
+    "mean_abs_logit_difference": 0.17917
+  },
+  "environment": {
+    "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "datasets": "5.1.0",
+      "seqeval": "1.2.2",
+      "onnxruntime": "1.30.0",
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
+    }
+  }
+}

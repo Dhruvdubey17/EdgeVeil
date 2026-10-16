@@ -10,6 +10,7 @@ Every number in a results table comes from a JSON file under `bench/results/`, a
 | `parity/` | `edgeveil parity --backend B` | Token-level label agreement with fp32 torch on 2,000 validation windows that calibration never saw |
 | `latency/` | `edgeveil bench latency --backend B` | Wall time of one model call on one window of 128, 256, and 512 tokens at batch size 1 |
 | `placement/` | `edgeveil bench placement --backend B` | Share of Core ML operations whose preferred device is the Neural Engine, and the operators whose supported devices exclude it, from `MLComputePlan` |
+| `quantization/` | `edgeveil bench activation-ranges` | Calibrated INT8 range and step of every activation in the static ONNX build, against its FP32 magnitudes on the calibration windows |
 | `power/` | `bash scripts/measure_power.sh` | CPU, GPU, and Neural Engine energy per 512-token window from `powermetrics` |
 
 Latency runs 20 warmup calls and then 200 timed calls per length, and reports p50 and p95 (numpy linear interpolation) plus every raw timing. Tokenization and span decoding are not timed; they are the same code for every backend. Each file records the chip, machine model, memory, OS, Python and library versions, the load average, swap use, and `pmset -g therm` output before and after the run, and the build's path, size, and SHA-256. The command idles 60 seconds before timing each build so one build's heat does not carry into the next.
@@ -32,13 +33,17 @@ uv run edgeveil bench latency --backend coreml
 uv run edgeveil export --backend coreml-ane --precision fp16
 uv run edgeveil export --backend coreml-ane --precision int8
 uv run edgeveil export --backend coreml-ane --precision int4
+uv run edgeveil export --backend coreml-ane --precision int4-per-channel
+uv run edgeveil export --backend coreml-ane --precision pal4
 uv run edgeveil bench latency --backend coreml-ane --compute-units all --compute-units cpu-and-ne
+uv run edgeveil bench latency --backend coreml-ane --precision fp16 --compute-units cpu-only --compute-units cpu-and-gpu
 uv run edgeveil bench placement
 uv run edgeveil bench placement --backend coreml-ane
 uv run edgeveil parity --backend onnxruntime
 uv run edgeveil parity --backend coreml --compute-units all
 uv run edgeveil parity --backend coreml --compute-units cpu-only
 uv run edgeveil eval --backend coreml --precision fp16 --compute-units all
+uv run edgeveil bench activation-ranges
 uv run edgeveil bench
 ```
 
