@@ -152,3 +152,73 @@ OpenPII has no password, key, or token labels, so CREDENTIAL training data is sy
 - A CREDENTIAL span covers only the secret. Field names, quotes, and the `Bearer` scheme word stay outside, matching `docs/labeling.md`.
 - `edgeveil data augment` refuses an output path with no `data` directory in it. The `data/` pattern in `.gitignore` matches a directory of that name at any depth, so this keeps generated provider-shaped keys out of anything that could be committed.
 - The test set's credentials are written by hand. If the generator also produced the test credentials, the test would measure how well the model learned the generator rather than real secrets.
+
+## The dev-test set
+
+From 2026-10-16 the 235 hand-labeled snippets in `data/test/test_set.jsonl` are called the dev-test set. They informed fixes: the first evaluation led to email domain rewriting and span-level thresholds, and the error analysis below shaped the validators and the combiner rules. Scores on the dev-test set are therefore optimistic and are not the number the README reports. Before publication, about 100 fresh snippets are written under the same rules in `docs/labeling.md`, labeled, and scored once, and the README reports that run.
+
+## Frozen v1 checkpoint
+
+The DistilBERT model trained on Kaggle on 2026-10-16 is v1, frozen for milestones 2 and 3: no retraining and no ModernBERT run until then. Every export, quantized build, and backend comparison starts from this file. `models/distilbert/model.safetensors` has SHA-256 `c0eafef1bf82eec0c88765986160ff0874b2a74812e717fb4918a5549b502c06`, and every accuracy result file records `model_sha256`, so a result from another checkpoint is visible in its file. The thresholds stay at `bench/results/thresholds/distilbert-fp32-torch.json`.
+
+## Error analysis
+
+`edgeveil eval` classifies every strict error. Gold and emitted spans are first snapped to the token grid used for strict scoring, so an exact match here is a strict true positive. A gold span with no exact match is a miss, and an emitted span with no exact match is a false positive. Each falls in one group:
+
+- Boundary: it overlaps a span of the same type on the other side. One boundary error counts once as a miss and once as a false positive, the way strict scoring counts it.
+- Wrong type: it overlaps only spans of other types.
+- Missed (for a miss) or spurious (for a false positive): it overlaps nothing.
+
+Same-type overlap takes precedence over other-type overlap. Counts per type go into each accuracy result file under `errors` and into the rendered tables. `edgeveil eval --show-errors model` prints every error with 30 characters of context; that text goes to the terminal only.
+
+On the dev-test set (model only, 2026-10-16) the 102 misses split into 25 missed, 31 boundary, and 46 wrong type, and the 131 false positives into 34 spurious, 45 boundary, and 52 wrong type.
+
+- CREDIT_CARD: 27 of 29 misses are wrong type. The model tags processor test numbers as PHONE (21) or GOV_ID (6), so the digits are masked (char recall 0.912) under the wrong placeholder. Those same spans are 27 of the 30 PHONE false positives.
+- PHONE: 7 of 10 misses are wrong type. Bare `555-01xx` numbers are tagged SSN or ADDRESS, often as a fragment such as `01` or `55`.
+- ADDRESS: 17 spurious false positives on short numbers (ports, PINs, room numbers, order numbers, security codes) and 16 boundary false positives where one address splits at unit words or region codes (`Suite 300`, `Room 412`, `ZZ`).
+- CREDENTIAL: 11 missed entirely, mostly human-chosen passwords and passphrases (dictionary words with digits or symbols) and one 32-character hex token. The synthetic training credentials are mostly machine-generated keys.
+- GOV_ID: 7 wrong-type misses, mostly tax and national insurance numbers tagged SSN.
+- EMAIL: 5 boundary misses, each splitting the local part at a period.
+
+The listing also shows gold spans that break `docs/labeling.md`: two addresses labeled EMAIL (snippets 103 and 144), titles inside PERSON (113, 231), a comma-joined name (64), a name split at `d/o` (133), and a partial card number (87). They are left as labeled and counted as they are.
+
+## Secondary metrics
+
+Strict entity F1 stays the headline. Two secondary measures sit next to it in `edgeveil eval` and the tables, each with a bootstrap interval over snippets using the same seed and resample count:
+
+- Overlap precision and recall: an emitted span matches if it overlaps a gold span of the same type, and the reverse for recall. This separates "found, wrong edges" from "not found".
+- Char recall: the share of gold span characters covered by any emitted span, of any type. A card number masked as PHONE still counts, because the value does not leave the device. This is the measure closest to leak rate.
+
+On the dev-test set, model only, overall strict recall is 0.729 [0.679, 0.776], overlap recall 0.812 [0.768, 0.850], and char recall 0.911 [0.882, 0.937].
+
+## Validators and the combiner
+
+Pulled forward from week 3. `edgeveil.validators.finders` has four pure functions that return spans with source `validator` and score 1.0:
+
+- Card numbers: digit runs with spaces, dashes, or no separators. Every contiguous run of digit groups with one separator style and 13 to 19 digits is tested with Luhn, and the longest passing run is kept, so a trailing expiry or a following number does not break the match.
+- Email: a strict pattern, `local@domain` with dot-separated parts and a 2 to 63 letter top-level label. Consecutive dots fail.
+- Phone: a fixed set of shapes (NANP with optional `+1` and parentheses, a 7-digit local number, `+` country code with groups, and national numbers with a leading 0), 7 to 15 digits. SSN, date, version, and price shapes do not match.
+- Credentials: runs of 20 or more key characters with upper case, lower case, and digits, at least 3.5 bits of entropy per character, not hex only (commit SHAs, UUIDs, checksums), and not a path.
+
+Validator spans that overlap each other are resolved by priority: email, card, phone, credential. `edgeveil.validators.combiner.combine_spans` holds every rule for merging model and validator spans:
+
+- Veto: a model CREDIT_CARD span that fails the card check (Luhn, 13 to 19 digits) and a model PHONE span with fewer than 7 digits are dropped.
+- Same type: the validator span replaces any overlapping model span, because regex edges follow the labeling rules exactly.
+- Different type: a model span that strictly contains the validator span wins, since it already masks the value. A model span inside the validator span is dropped. A model span that only partly overlaps keeps the part outside the validator span, trimmed of whitespace. The first version dropped such spans, which unmasked a name next to an email on the dev-test set; trimming means the combiner never unmasks model-masked text except through a veto.
+
+The validators and the trimming rule were written after the error analysis above, so validator and combined scores on the dev-test set are optimistic like the model scores.
+
+Ablation on the dev-test set (2026-10-16), strict F1 [95% CI]:
+
+| | Model only | Validators only | Both |
+|---|---|---|---|
+| EMAIL | 0.805 [0.689, 0.918] | 0.956 [0.905, 0.990] | 0.956 [0.905, 0.990] |
+| PHONE | 0.615 [0.480, 0.722] | 0.941 [0.875, 0.988] | 0.899 [0.816, 0.959] |
+| CREDENTIAL | 0.588 [0.431, 0.727] | 0.436 [0.245, 0.600] | 0.618 [0.455, 0.741] |
+| CREDIT_CARD | 0.453 [0.261, 0.610] | 0.988 [0.957, 1.000] | 0.988 [0.957, 1.000] |
+| overall | 0.702 [0.652, 0.748] | 0.519 [0.470, 0.569] | 0.810 [0.769, 0.850] |
+
+- PHONE is lower with both than with validators alone because of 6 wrong-type false positives on SSN and GOV_ID values. Four are model PHONE spans that no validator overlaps. Two come from the phone validator's leading-0 national shape, which matches the ID card numbers `0000 1111 2222` style (snippets 133 and 154) and replaces the model's correct GOV_ID spans there. Those values stay masked, under the wrong placeholder.
+- GOV_ID F1 moves from 0.637 to 0.658, and wrong-type misses rise from 7 to 9 for the same two snippets.
+- The PHONE veto drops a 6-digit model PHONE fragment inside a driver's license number (snippet 139), which lowers GOV_ID char recall from 0.873 to 0.857. This is the one place the combiner unmasks text.
+- Full tables: `bench/results/tables/ablation-distilbert-fp32-torch.md` and the three `accuracy-*.md` files.
