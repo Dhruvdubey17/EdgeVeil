@@ -12,7 +12,7 @@
     "size_bytes": 36880733,
     "quantization": "INT4 weights in blocks, FP16 activations"
   },
-  "source": "coremltools MLComputePlan: preferred compute device per ML Program operation in the main function; operations without a device usage are counted as unassigned and left out of the shares",
+  "source": "coremltools MLComputePlan: preferred compute device per ML Program operation in the main function; operations without a device usage are counted as unassigned and left out of the shares; operators_unsupported_on_neural_engine counts operations whose supported devices exclude the Neural Engine",
   "operations": 235,
   "unassigned_operations": 320,
   "by_device": {
@@ -52,6 +52,33 @@
       "ios18.gather_nd": 1,
       "ios18.sub": 1
     }
+  },
+  "operators_unsupported_on_neural_engine": {
+    "ios18.linear": 37,
+    "ios18.cast": 26,
+    "ios18.reshape": 24,
+    "ios18.transpose": 24,
+    "ios18.add": 21,
+    "ios18.layer_norm": 13,
+    "ios18.matmul": 12,
+    "ios18.gather": 10,
+    "shape": 10,
+    "ios18.concat": 9,
+    "ios18.mul": 7,
+    "ios18.expand_dims": 6,
+    "ios18.softmax": 6,
+    "ios18.gelu": 6,
+    "select": 5,
+    "ios18.greater_equal": 3,
+    "tile": 3,
+    "ios18.slice_by_index": 2,
+    "range_1d": 2,
+    "ios18.logical_and": 2,
+    "ios18.equal": 2,
+    "ios18.real_div": 2,
+    "stack": 1,
+    "ios18.gather_nd": 1,
+    "ios18.sub": 1
   },
   "environment": {
     "chip": "Apple M3",

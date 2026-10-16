@@ -12,7 +12,7 @@
     "size_bytes": 65522653,
     "quantization": "INT8 weights per channel, FP16 activations"
   },
-  "source": "coremltools MLComputePlan: preferred compute device per ML Program operation in the main function; operations without a device usage are counted as unassigned and left out of the shares",
+  "source": "coremltools MLComputePlan: preferred compute device per ML Program operation in the main function; operations without a device usage are counted as unassigned and left out of the shares; operators_unsupported_on_neural_engine counts operations whose supported devices exclude the Neural Engine",
   "operations": 234,
   "unassigned_operations": 321,
   "by_device": {
@@ -52,6 +52,15 @@
       "ios18.gather_nd": 1,
       "ios18.sub": 1
     }
+  },
+  "operators_unsupported_on_neural_engine": {
+    "ios18.cast": 24,
+    "shape": 10,
+    "ios18.reshape": 6,
+    "tile": 3,
+    "range_1d": 2,
+    "ios18.gather": 1,
+    "ios18.slice_by_index": 1
   },
   "environment": {
     "chip": "Apple M3",

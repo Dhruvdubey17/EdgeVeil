@@ -432,3 +432,52 @@ A one-off diagnostic in the session scratchpad, not a results file, loaded the f
 - Under CPU_AND_NE the plan lists the Neural Engine among the supported devices for all 37 `linear` operations, yet it prefers the CPU for every operation. Why has not been established. Candidates include the shape-dependent operations the trace keeps (`shape`, `range_1d`, `tile`, `gather_nd`) and the int32 and bool mask arithmetic (`greater_equal`, `logical_and`, `select`) inside the graph. The Xcode performance report in docs/benchmarks.md is the next check.
 - When the Neural Engine is allowed, the CPU plan runs 4.5x slower than CPU_ONLY, and the fp16 build is closer to fp32 torch (max logit difference 0.021 against 0.226). One reading is that the two CPU paths compute at different precision. That has not been verified.
 - The spec's Neural Engine claim is not supported by this conversion. Per the plan, this is recorded rather than worked around.
+
+## Neural Engine diagnosis
+
+Run on the same machine and software as above (Mac15,13, macOS 26.1, coremltools 9.0). Placement files cover every v1 Core ML build at all four compute-unit settings.
+
+- CPU_AND_NE does not move v1 operations to the Neural Engine. fp16 and int8 stay on the CPU for all 230 to 234 operations, and int4 puts 5 of 235 there. The scheduler was not simply preferring the GPU.
+- Supported devices per operation (`operators_unsupported_on_neural_engine` in the placement files), v1 fp16 under CPU_AND_NE: 23 `cast`, 10 `shape`, 6 `reshape`, 3 `tile`, 2 `range_1d`, 1 `gather`, 1 `slice_by_index` cannot run on the Neural Engine. All 37 `linear`, all 12 attention `matmul`, softmax, layer norm, and GELU can. The unsupported operations are runtime shape arithmetic from the traced `x.size()` calls and the int32/bool mask construction. Why the planner then keeps the supported operations on the CPU as well is not exposed by the API. For int4, all 37 block-quantized `linear` operations are also unsupported on the Neural Engine.
+- Basic check: twelve FP16 1x1 convolutions (768 to 3,072 and back, input (1, 768, 1, 512), fixed shape) place 12 of 12 on the Neural Engine under CPU_AND_NE and ALL, and the Neural Engine compiler log shows the network compiling. A smaller probe (four 256-channel convolutions at 128 positions) stayed on the CPU, so small graphs are not a valid probe on this machine. Device, OS, and converter all work.
+- The v1 packages use FP16 compute (opset CoreML8, FP16 tensors), int32 inputs with enumerated shapes, and no int64 tensors. None of these basics was the cause.
+
+## Neural Engine layout
+
+`edgeveil.export.neural_engine` rebuilds DistilBERT for the Neural Engine from the v1 weights, following the ideas in Apple's article on deploying transformers to the Neural Engine, reimplemented here:
+
+- Activations are (batch, channels, 1, sequence). Every `Linear` becomes a 1x1 `Conv2d` with the same weights.
+- Attention is split per head along the channel axis. Keys are transposed once per layer; scores and outputs are two einsums per head, with softmax over the key axis.
+- LayerNorm is computed over the channel axis from mean, variance, and rsqrt. The converter fuses it back into `layer_norm` plus `batch_norm`.
+- The wrapper takes `input_ids`, `position_ids`, and an additive `attention_bias` of shape (1, sequence, 1, 1) as inputs: 0 for real tokens, -1e4 for padding. The backend builds all three in numpy, so the graph has no mask arithmetic, no `x.size()`, and no `new_ones`. Output is (1, labels, 1, sequence) and the backend transposes it.
+- It is exported as its own backend, `coreml-ane`, with the same enumerated lengths (128, 256, 512), FP16 compute, and int8 and int4 weight quantization.
+
+Equivalence before conversion: on 200 validation windows padded to all three lengths, the torch wrapper and the Hugging Face model differ by at most 2.1e-5 in any logit (`tests/test_neural_engine.py` checks this against v1 when the model and data are present, and on a tiny random model in CI).
+
+Placement (`bench/results/placement/distilbert-*-coreml-ane-*.json`):
+
+| Build | Compute units | Neural Engine | CPU | GPU | Neural Engine share of estimated cost |
+|---|---|---|---|---|---|
+| fp16 | all | 404 | 8 | 0 | 0.810 |
+| fp16 | cpu-and-ne | 404 | 8 | 0 | 0.810 |
+| int8 | all | 404 | 12 | 0 | 0.810 |
+| int8 | cpu-and-ne | 404 | 12 | 0 | 0.810 |
+| int4 | all | 0 | 0 | 416 | 0.000 |
+| int4 | cpu-and-ne | 0 | 415 | 0 | 0.000 |
+
+- Every encoder layer, the position embedding lookup, and the classifier run on the Neural Engine for fp16 and int8. int8 leaves 12 operations on the CPU instead of 8: one more `cast`, `greater_equal`, `add`, and `select`, a second index wrap.
+- The operations left on the CPU are the word embedding lookup and its index handling: `input_ids` cast to int16, a second cast, `greater_equal`, `add`, and `select` (the gather's negative-index wrap), another cast, the `gather` itself on the 28,996 x 768 table, and the `position_ids` cast. The plan lists each of them as unsupported on the Neural Engine, which matches the 0.810 cost share.
+- int4 does not run on the Neural Engine in this layout either. The plan lists all 37 block-quantized `conv` operations as unsupported there. Under CPU_AND_NE the whole model falls back to the CPU; under ALL it runs on the GPU. Recorded as a finding.
+
+Parity and dev-test accuracy (`bench/results/parity/` and `bench/results/accuracy/`, `*-coreml-ane-*`):
+
+| Build | Compute units | Token agreement | Entity token agreement | Max logit difference | F1, model (95% CI) | F1, model and validators |
+|---|---|---|---|---|---|---|
+| fp16 | all | 0.999995 | 1.0000 | 0.058 | 0.727 [0.677, 0.769] | 0.833 |
+| fp16 | cpu-and-ne | 0.999995 | 1.0000 | 0.058 | 0.727 [0.677, 0.769] | 0.833 |
+| int8 | all | 0.999958 | 0.999899 | 0.438 | 0.724 [0.673, 0.767] | 0.830 |
+| int8 | cpu-and-ne | 0.999958 | 0.999899 | 0.438 | 0.724 [0.673, 0.767] | 0.830 |
+| int4 | all | 0.999423 | 0.998684 | 2.622 | 0.696 [0.643, 0.744] | 0.812 |
+| int4 | cpu-and-ne | 0.999428 | 0.998684 | 2.575 | 0.696 [0.642, 0.744] | 0.812 |
+
+- fp16 on the Neural Engine disagrees with fp32 torch on 1 of 192,275 validation tokens. On the dev-test set it differs by one span: an ADDRESS span whose boundary moves (ADDRESS F1 0.608 to 0.592, overall 0.729 to 0.727, intervals overlapping). This is counted as within parity tolerance; it is not bit-identical.

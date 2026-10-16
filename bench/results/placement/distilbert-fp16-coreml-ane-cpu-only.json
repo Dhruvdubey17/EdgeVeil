@@ -1,0 +1,81 @@
+{
+  "precision": "fp16",
+  "backend": "coreml-ane",
+  "compute_units": "cpu-only",
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "coreml-ane",
+    "precision": "fp16",
+    "compute_units": "cpu-only",
+    "path": "models/distilbert/coreml-ane/fp16.mlpackage",
+    "sha256": "d9620925be682c34bc9b3eaeedac309161dd96a1253071fc62603c5c9da42c29",
+    "size_bytes": 130586251,
+    "quantization": "Neural Engine layout, FP16 weights and activations"
+  },
+  "source": "coremltools MLComputePlan: preferred compute device per ML Program operation in the main function; operations without a device usage are counted as unassigned and left out of the shares; operators_unsupported_on_neural_engine counts operations whose supported devices exclude the Neural Engine",
+  "operations": 412,
+  "unassigned_operations": 547,
+  "by_device": {
+    "unassigned": 547,
+    "cpu": 412
+  },
+  "cost_by_device": {
+    "cpu": 1.0
+  },
+  "neural_engine_share": 0.0,
+  "neural_engine_cost_share": 0.0,
+  "operators_off_neural_engine": {
+    "cpu": {
+      "ios16.einsum": 144,
+      "ios18.add": 86,
+      "ios18.softmax": 72,
+      "ios18.conv": 37,
+      "split": 18,
+      "ios18.layer_norm": 13,
+      "ios18.batch_norm": 13,
+      "ios18.transpose": 7,
+      "ios18.concat": 6,
+      "ios18.gelu": 6,
+      "ios18.cast": 5,
+      "ios18.gather": 2,
+      "ios18.greater_equal": 1,
+      "select": 1,
+      "ios18.expand_dims": 1
+    }
+  },
+  "operators_unsupported_on_neural_engine": {
+    "ios16.einsum": 144,
+    "ios18.add": 86,
+    "ios18.softmax": 72,
+    "ios18.conv": 37,
+    "split": 18,
+    "ios18.layer_norm": 13,
+    "ios18.batch_norm": 13,
+    "ios18.transpose": 7,
+    "ios18.concat": 6,
+    "ios18.gelu": 6,
+    "ios18.cast": 5,
+    "ios18.gather": 2,
+    "ios18.greater_equal": 1,
+    "select": 1,
+    "ios18.expand_dims": 1
+  },
+  "environment": {
+    "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "datasets": "5.1.0",
+      "seqeval": "1.2.2",
+      "onnxruntime": "1.30.0",
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
+    }
+  }
+}
