@@ -107,6 +107,10 @@ def export_build(
         from edgeveil.export.onnx_builds import build_onnx
 
         path = build_onnx(model_dir, precision, data_dir)
+    elif backend is Backend.COREML:
+        from edgeveil.export.coreml_builds import build_coreml
+
+        path = build_coreml(model_dir, precision)
     else:
         exit_not_implemented("export", f" for {backend.value}")
     from edgeveil.detector.builds import build_size_bytes

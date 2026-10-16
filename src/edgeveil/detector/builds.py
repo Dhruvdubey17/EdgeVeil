@@ -174,6 +174,6 @@ def load_detector(
         from edgeveil.detector.onnx_backend import OnnxRuntimeDetector
 
         return OnnxRuntimeDetector(path, model_dir, thresholds)
-    raise UnsupportedBuildError(
-        f"no {backend.value} detector yet for {compute_units.value} compute units"
-    )
+    from edgeveil.detector.coreml_backend import CoreMLDetector
+
+    return CoreMLDetector(path, model_dir, thresholds, compute_units)
