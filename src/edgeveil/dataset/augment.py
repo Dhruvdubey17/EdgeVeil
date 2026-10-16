@@ -13,6 +13,7 @@ from edgeveil.dataset.credentials import (
     AugmentedSplit,
     augment_split,
 )
+from edgeveil.dataset.emails import rewrite_email_domains
 from edgeveil.dataset.names import NameJoint, add_name_connectors
 from edgeveil.dataset.openpii import OPENPII_SPLITS, DatasetError
 from edgeveil.dataset.prepare import openpii_clean_dir
@@ -34,6 +35,8 @@ class AugmentationReport:
     credential_row_share: dict[str, float]
     name_pairs_eligible: dict[str, int]
     name_connectors_inserted: dict[str, int]
+    emails_seen: dict[str, int]
+    email_domains_rewritten: dict[str, int]
 
 
 def openpii_augmented_dir(data_dir: Path) -> Path:
@@ -87,6 +90,8 @@ class SplitAugmentation:
     augmented: AugmentedSplit
     name_pairs_eligible: int
     name_connectors_inserted: int
+    emails_seen: int
+    email_domains_rewritten: int
 
 
 def augmented_records(
@@ -120,13 +125,16 @@ def augment_and_write_split(data_dir: Path, split: str, seed: int) -> SplitAugme
     clean = load_clean_split(data_dir, split)
     rng = split_rng(seed, split)
     with_connectors = add_name_connectors(clean.rows, clean.name_joints, rng)
-    augmented = augment_split(with_connectors.rows, TEMPLATES_BY_SPLIT[split], rng)
+    with_domains = rewrite_email_domains(with_connectors.rows, rng)
+    augmented = augment_split(with_domains.rows, TEMPLATES_BY_SPLIT[split], rng)
     path = openpii_augmented_dir(data_dir) / f"{split}.parquet"
     Dataset.from_list(augmented_records(clean.uids, augmented)).to_parquet(str(path))
     return SplitAugmentation(
         augmented=augmented,
         name_pairs_eligible=with_connectors.eligible_pairs,
         name_connectors_inserted=with_connectors.connectors_inserted,
+        emails_seen=with_domains.emails_seen,
+        email_domains_rewritten=with_domains.domains_rewritten,
     )
 
 
@@ -158,6 +166,10 @@ def augment_openpii(data_dir: Path, seed: int) -> AugmentationReport:
         },
         name_connectors_inserted={
             split: result.name_connectors_inserted for split, result in results.items()
+        },
+        emails_seen={split: result.emails_seen for split, result in results.items()},
+        email_domains_rewritten={
+            split: result.email_domains_rewritten for split, result in results.items()
         },
     )
     (output_dir / REPORT_NAME).write_text(json.dumps(asdict(report), indent=2))

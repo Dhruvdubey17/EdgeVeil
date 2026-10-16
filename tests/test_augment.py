@@ -48,13 +48,17 @@ def test_augment_writes_both_splits_with_credentials(tmp_path: Path) -> None:
         str(openpii_augmented_dir(data_dir) / "train.parquet"),
         cache_dir=str(tmp_path / "cache"),
     ).to_list()
-    for record in augmented:
-        for span in record["spans"]:
-            if span["label"] == "EMAIL":
-                assert (
-                    record["source_text"][span["start"] : span["end"]]
-                    == "ada@example.com"
-                )
+    emails = [
+        record["source_text"][span["start"] : span["end"]]
+        for record in augmented
+        for span in record["spans"]
+        if span["label"] == "EMAIL"
+    ]
+    assert emails
+    assert all(
+        email.startswith("ada@") and "." in email.split("@")[1] for email in emails
+    )
+    assert report.email_domains_rewritten["train"] > 0
     templates = [
         record
         for record in augmented

@@ -77,7 +77,7 @@ TRAIN_TEMPLATES = TemplateSet(
     ),
     standalone_contexts=(
         "DATABASE_HOST=localhost\nDATABASE_PASSWORD={password}\nAPI_KEY={api_key}\nDEBUG=false",
-        'curl -H "Authorization: Bearer {token}" https://api.example.com/v1/orders',
+        'curl -H "Authorization: Bearer {token}" https://api.orders.invalid/v1/orders',
         '{\n  "client_id": "app-412",\n  "client_secret": "{api_key}"\n}',
         'client = Client(api_key="{api_key}", timeout=30)',
         "auth:\n  username: deploy\n  password: {password}\n  token: {token}",

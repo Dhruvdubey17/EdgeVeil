@@ -74,6 +74,10 @@ def augment(
     console.print(
         count_table("Name connectors inserted", report.name_connectors_inserted)
     )
+    console.print(count_table("Emails seen", report.emails_seen))
+    console.print(
+        count_table("Email domains rewritten", report.email_domains_rewritten)
+    )
     for split, share in report.credential_row_share.items():
         console.print(f"{split}: {share:.2%} of rows contain a CREDENTIAL span.")
 
