@@ -34,6 +34,8 @@ class Precision(StrEnum):
     INT8_DYNAMIC = "int8-dynamic"
     INT8_STATIC = "int8-static"
     INT4 = "int4"
+    INT4_PER_CHANNEL = "int4-per-channel"
+    PAL4 = "pal4"
 
 
 class ComputeUnits(StrEnum):
@@ -69,6 +71,8 @@ QUANTIZATION_SCHEMES: dict[Backend, dict[Precision, str]] = {
         Precision.FP16: "Neural Engine layout, FP16 weights and activations",
         Precision.INT8: "Neural Engine layout, INT8 weights per channel",
         Precision.INT4: "Neural Engine layout, INT4 weights in blocks",
+        Precision.INT4_PER_CHANNEL: "Neural Engine layout, INT4 weights per channel",
+        Precision.PAL4: "Neural Engine layout, 4-bit k-means palettized weights",
     },
     Backend.QUALCOMM: {},
 }

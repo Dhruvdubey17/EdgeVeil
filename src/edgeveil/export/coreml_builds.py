@@ -6,8 +6,10 @@ import numpy as np
 import torch
 from coremltools.optimize.coreml import (
     OpLinearQuantizerConfig,
+    OpPalettizerConfig,
     OptimizationConfig,
     linear_quantize_weights,
+    palettize_weights,
 )
 
 from edgeveil.detector.builds import (
@@ -30,6 +32,7 @@ from edgeveil.export.torch_model import load_logits_model
 
 COREML_DEPLOYMENT_TARGET = coremltools.target.macOS15
 TRACE_SEQUENCE_LENGTH = max(ANE_SEQUENCE_LENGTHS)
+PALETTE_BITS = 4
 WEIGHT_QUANTIZATION = {
     Precision.INT8: OpLinearQuantizerConfig(
         mode="linear_symmetric", dtype="int8", granularity="per_channel"
@@ -39,6 +42,14 @@ WEIGHT_QUANTIZATION = {
         dtype="int4",
         granularity="per_block",
         block_size=INT4_BLOCK_SIZE,
+    ),
+    Precision.INT4_PER_CHANNEL: OpLinearQuantizerConfig(
+        mode="linear_symmetric", dtype="int4", granularity="per_channel"
+    ),
+}
+PALETTIZATION = {
+    Precision.PAL4: OpPalettizerConfig(
+        nbits=PALETTE_BITS, mode="kmeans", granularity="per_tensor"
     ),
 }
 
@@ -120,6 +131,9 @@ def quantize_weights(
     fp16_path: Path, precision: Precision
 ) -> coremltools.models.MLModel:
     source = coremltools.models.MLModel(str(fp16_path), skip_model_load=True)
+    if precision in PALETTIZATION:
+        config = OptimizationConfig(global_config=PALETTIZATION[precision])
+        return cast("coremltools.models.MLModel", palettize_weights(source, config))
     config = OptimizationConfig(global_config=WEIGHT_QUANTIZATION[precision])
     quantized = linear_quantize_weights(source, config)
     return cast("coremltools.models.MLModel", quantized)
