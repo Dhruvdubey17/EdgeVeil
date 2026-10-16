@@ -16,39 +16,21 @@ from onnxruntime.quantization import (
 from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
 from onnxruntime.quantization.onnx_model import ONNXModel
 from onnxruntime.transformers import float16
-from torch import nn
-from transformers import AutoModelForTokenClassification
 
-from edgeveil.detector.builds import Backend, Precision, build_path
+from edgeveil.detector.builds import INT4_BLOCK_SIZE, Backend, Precision, build_path
 from edgeveil.detector.inference import ATTENTION_MASK_NAME, INPUT_IDS_NAME, LOGITS_NAME
 from edgeveil.detector.windows import MAX_WINDOW_TOKENS, Window, load_tokenizer
 from edgeveil.export.calibration import WindowCalibrationReader, validation_sample
+from edgeveil.export.torch_model import load_logits_model
 
 ONNX_OPSET_VERSION = 18
 EXAMPLE_BATCH_SIZE = 2
 EXAMPLE_SEQUENCE_LENGTH = 16
 INT4_BITS = 4
-INT4_BLOCK_SIZE = 32
 
 
 class MissingBuildError(FileNotFoundError):
     pass
-
-
-class LogitsOnly(nn.Module):
-    def __init__(self, model: nn.Module) -> None:
-        super().__init__()
-        self.model = model
-
-    def forward(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
-    ) -> torch.Tensor:
-        return self.model(input_ids=input_ids, attention_mask=attention_mask).logits
-
-
-def load_logits_model(model_dir: Path) -> LogitsOnly:
-    model = AutoModelForTokenClassification.from_pretrained(model_dir)
-    return LogitsOnly(model).eval()
 
 
 def example_inputs() -> tuple[torch.Tensor, torch.Tensor]:

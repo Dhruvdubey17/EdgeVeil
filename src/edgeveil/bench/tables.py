@@ -3,6 +3,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from edgeveil.bench.tradeoff import render_tradeoff_tables
 from edgeveil.evaluation.detection import Detection, results_stem
 from edgeveil.spans import EntityType
 
@@ -92,12 +93,21 @@ def error_total_row(errors: Mapping[str, Any]) -> list[str]:
     ]
 
 
+def model_description(payload: Mapping[str, Any]) -> str:
+    if payload["backend"] is None:
+        return "No model"
+    parts = [payload["base_model"], payload["precision"], payload["backend"]]
+    if payload.get("compute_units") is not None:
+        parts.append(f"compute units {payload['compute_units']}")
+    return ", ".join(parts)
+
+
 def caption(payload: Mapping[str, Any], sources: str) -> str:
     test_set = payload["test_set"]
     bootstrap = payload["bootstrap"]
     resamples, unit = bootstrap["resamples"], bootstrap["unit"]
     return (
-        f"{payload['base_model']}, {payload['precision']}, {payload['backend']}. "
+        f"{model_description(payload)}. "
         f"Test set: {test_set['snippets']} snippets. "
         f"Intervals: {resamples} bootstrap resamples by {unit}. "
         f"Source: {sources}."
@@ -194,4 +204,5 @@ def render_accuracy_tables(results_dir: Path) -> list[Path]:
         table_path = tables_dir / f"accuracy-{source.stem}.md"
         table_path.write_text(accuracy_table(payload, source.as_posix()))
         written.append(table_path)
-    return written + render_ablation_tables(results_dir, tables_dir)
+    ablations = render_ablation_tables(results_dir, tables_dir)
+    return written + ablations + render_tradeoff_tables(results_dir, tables_dir)

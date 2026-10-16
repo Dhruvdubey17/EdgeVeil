@@ -86,8 +86,9 @@ def test_render_writes_one_table_per_results_file_and_an_ablation(
         "accuracy-distilbert-fp32-torch.md",
         "accuracy-distilbert-validators.md",
         "ablation-distilbert-fp32-torch.md",
+        "accuracy-latency.md",
     ]
-    ablation = written[-1].read_text()
+    ablation = written[-2].read_text()
     assert "F1, model and validators" in ablation
     assert table_rows(ablation)[0].count("0.900 [0.850, 0.950]") == 6
 
@@ -100,5 +101,6 @@ def test_ablation_needs_all_three_results(tmp_path: Path) -> None:
     )
     written = render_accuracy_tables(results)
     assert [path.name for path in written] == [
-        "accuracy-distilbert-fp32-torch-combined.md"
+        "accuracy-distilbert-fp32-torch-combined.md",
+        "accuracy-latency.md",
     ]

@@ -10,6 +10,8 @@ ONNX_DIR_NAME = "onnx"
 COREML_DIR_NAME = "coreml"
 TORCH_WEIGHTS_NAME = "model.safetensors"
 REFERENCE_RUN_SUFFIX = "fp32-torch"
+INT4_BLOCK_SIZE = 32
+ANE_SEQUENCE_LENGTHS = (128, 256, 512)
 
 
 class UnsupportedBuildError(ValueError):
@@ -107,6 +109,11 @@ def build_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def build_size_bytes(path: Path) -> int:
+    files = [path] if path.is_file() else list(path.rglob("*"))
+    return sum(item.stat().st_size for item in files if item.is_file())
+
+
 @dataclass(frozen=True, slots=True)
 class BuildRecord:
     model_dir: str
@@ -115,6 +122,7 @@ class BuildRecord:
     compute_units: str | None
     path: str
     sha256: str
+    size_bytes: int
     quantization: str
 
 
@@ -141,6 +149,7 @@ def build_record(
         compute_units=None if units is None else units.value,
         path=str(path),
         sha256=build_sha256(path),
+        size_bytes=build_size_bytes(path),
         quantization=QUANTIZATION_SCHEMES[backend][precision],
     )
 

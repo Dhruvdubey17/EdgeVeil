@@ -12,8 +12,11 @@ TRACKED_PACKAGES = (
     "seqeval",
     "onnxruntime",
     "coremltools",
+    "onnx",
+    "onnxscript",
 )
 NOT_INSTALLED = "not installed"
+NOT_AVAILABLE = "not available"
 
 
 def chip_name() -> str:
@@ -29,6 +32,15 @@ def chip_name() -> str:
     return platform.processor() or platform.machine()
 
 
+def sysctl_value(name: str) -> str:
+    if sys.platform != "darwin":
+        return NOT_AVAILABLE
+    result = subprocess.run(
+        ["sysctl", "-n", name], capture_output=True, text=True, check=False
+    )
+    return result.stdout.strip() or NOT_AVAILABLE
+
+
 def package_version(name: str) -> str:
     try:
         return metadata.version(name)
@@ -39,6 +51,8 @@ def package_version(name: str) -> str:
 def environment_record() -> dict[str, Any]:
     return {
         "chip": chip_name(),
+        "machine_model": sysctl_value("hw.model"),
+        "memory_bytes": sysctl_value("hw.memsize"),
         "os": platform.platform(),
         "python": platform.python_version(),
         "packages": {name: package_version(name) for name in TRACKED_PACKAGES},

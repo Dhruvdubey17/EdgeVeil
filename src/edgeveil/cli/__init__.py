@@ -109,14 +109,74 @@ def export_build(
         path = build_onnx(model_dir, precision, data_dir)
     else:
         exit_not_implemented("export", f" for {backend.value}")
-    output_console.print(f"Saved {path} ({build_megabytes(path):.1f} MB).")
+    from edgeveil.detector.builds import build_size_bytes
+
+    megabytes = build_size_bytes(path) / BYTES_PER_MEGABYTE
+    output_console.print(f"Saved {path} ({megabytes:.1f} MB).")
 
 
-def build_megabytes(path: Path) -> float:
-    files = [path] if path.is_file() else list(path.rglob("*"))
-    return sum(item.stat().st_size for item in files if item.is_file()) / (
-        BYTES_PER_MEGABYTE
+@app.command(
+    help="Measure token-level agreement of builds with the fp32 torch model on "
+    "validation windows that calibration never saw, and save one result per build."
+)
+def parity(
+    backend: Annotated[
+        Backend, typer.Option(help="Backend whose builds to compare.")
+    ] = Backend.ONNXRUNTIME,
+    precision: Annotated[
+        list[Precision] | None,
+        typer.Option(
+            help="Build to compare; repeat for several. Default: every built one."
+        ),
+    ] = None,
+    compute_units: Annotated[
+        ComputeUnits,
+        typer.Option(help="Core ML compute units; other backends ignore it."),
+    ] = ComputeUnits.ALL,
+    preset: Annotated[
+        ModelPreset, typer.Option(help="Trained model to compare.")
+    ] = ModelPreset.DISTILBERT,
+    models_dir: Annotated[
+        Path, typer.Option(help="Directory with trained models.")
+    ] = DEFAULT_MODELS_DIR,
+    data_dir: Annotated[
+        Path, typer.Option(help="Directory with prepared data.")
+    ] = DEFAULT_DATA_DIR,
+    results_dir: Annotated[
+        Path, typer.Option(help="Directory for result files.")
+    ] = DEFAULT_RESULTS_DIR,
+) -> None:
+    from edgeveil.detector.builds import (
+        QUANTIZATION_SCHEMES,
+        TORCH_WEIGHTS_NAME,
+        build_path,
+        file_sha256,
+        run_name,
     )
+    from edgeveil.evaluation.parity import measure_parity, write_parity_results
+
+    model_dir = models_dir / preset.value
+    chosen = precision or [
+        item
+        for item in QUANTIZATION_SCHEMES[backend]
+        if build_path(model_dir, backend, item).exists()
+    ]
+    for item in chosen:
+        checked_build("parity", backend, item)
+        exit_if_unbuilt("parity", model_dir, backend, item)
+    measured = measure_parity(model_dir, data_dir, backend, chosen, compute_units)
+    model_sha256 = file_sha256(model_dir / TORCH_WEIGHTS_NAME)
+    for item, result in measured.items():
+        name = run_name(preset.value, backend, item, compute_units)
+        path = results_dir / "parity" / f"{name}.json"
+        write_parity_results(result.report, result.build, model_sha256, path)
+        report = result.report
+        output_console.print(
+            f"{name}: token agreement {report.token_agreement:.4f}, entity tokens "
+            f"{report.entity_token_agreement:.4f} of {report.reference_entity_tokens}, "
+            f"max logit difference {report.max_abs_logit_difference:.4f}. "
+            f"Saved {path}."
+        )
 
 
 @app.command(help="Print the masked text and the detected spans.")

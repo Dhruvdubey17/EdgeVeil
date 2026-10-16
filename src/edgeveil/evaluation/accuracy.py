@@ -172,6 +172,18 @@ def training_record(model_dir: Path) -> dict[str, Any]:
     return json.loads(path.read_text())
 
 
+def build_fields(report: AccuracyReport) -> dict[str, Any]:
+    if report.detection is Detection.VALIDATORS:
+        return dict.fromkeys(("precision", "backend", "compute_units", "build"))
+    build = report.run.build
+    return {
+        "precision": build.precision,
+        "backend": build.backend,
+        "compute_units": build.compute_units,
+        "build": asdict(build),
+    }
+
+
 def write_accuracy_results(report: AccuracyReport, path: Path) -> None:
     run = report.run
     training = training_record(Path(run.model_dir))
@@ -185,10 +197,7 @@ def write_accuracy_results(report: AccuracyReport, path: Path) -> None:
         "base_model_revision": training.get("base_model_revision"),
         "training_dataset_revision": training.get("dataset_revision"),
         "trained_on": training.get("accelerator"),
-        "precision": run.build.precision,
-        "backend": run.build.backend,
-        "compute_units": run.build.compute_units,
-        "build": asdict(run.build),
+        **build_fields(report),
         "test_set": {
             "path": run.test_set_path,
             "sha256": run.test_set_sha256,
