@@ -12,10 +12,13 @@ from transformers import (
 from edgeveil.detector.labels import ID_TO_LABEL, LABEL_TO_ID
 from edgeveil.evaluation.accuracy import (
     UnsupportedConfigurationError,
+    error_example_lines,
     evaluate_test_set,
     load_thresholds,
     write_accuracy_results,
 )
+from edgeveil.evaluation.detection import Detection
+from edgeveil.evaluation.errors import error_counts
 from edgeveil.evaluation.test_set import LabeledSnippet, write_test_set
 from edgeveil.spans import EntityType, GoldSpan
 
@@ -69,10 +72,12 @@ def test_evaluation_scores_every_gold_type_and_writes_numbers_only(
     tiny_setup: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
     model_dir, test_set, thresholds = tiny_setup
-    report = evaluate_test_set(
+    reports = evaluate_test_set(
         model_dir, test_set, thresholds, resamples=50, device=torch.device("cpu")
     )
-    assert report.snippets == 3
+    assert set(reports) == set(Detection)
+    report = reports[Detection.MODEL]
+    assert report.run.snippets == 3
     assert {"PERSON", "EMAIL", "overall"} <= set(report.scores)
     assert report.scores["PERSON"].support == 3
     path = tmp_path / "bench" / "results" / "accuracy.json"
@@ -81,6 +86,41 @@ def test_evaluation_scores_every_gold_type_and_writes_numbers_only(
     assert "example.com" not in saved
     assert "Ada" not in saved
     payload = json.loads(saved)
+    assert payload["detection"] == "model"
     assert payload["bootstrap"]["unit"] == "snippet"
     assert set(payload["scores"]["PERSON"]) == {"precision", "recall", "f1", "support"}
+    assert set(payload["secondary_scores"]["overall"]) == {
+        "overlap_precision",
+        "overlap_recall",
+        "char_recall",
+    }
     assert len(payload["test_set"]["sha256"]) == 64
+    assert len(payload["model_sha256"]) == 64
+
+
+def test_validators_alone_find_the_email_and_miss_the_name(
+    tiny_setup: tuple[Path, Path, Path],
+) -> None:
+    model_dir, test_set, thresholds = tiny_setup
+    reports = evaluate_test_set(
+        model_dir, test_set, thresholds, resamples=20, device=torch.device("cpu")
+    )
+    validators = reports[Detection.VALIDATORS]
+    assert validators.scores["EMAIL"].recall.value == 1.0
+    assert validators.secondary["EMAIL"].char_recall.value == 1.0
+    counts = error_counts(validators.errors)
+    assert counts["misses"]["PERSON"] == {"missed": 3, "boundary": 0, "wrong_type": 0}
+    assert counts["false_positives"]["EMAIL"]["spurious"] == 0
+
+
+def test_error_examples_show_the_span_in_its_context(
+    tiny_setup: tuple[Path, Path, Path],
+) -> None:
+    model_dir, test_set, thresholds = tiny_setup
+    reports = evaluate_test_set(
+        model_dir, test_set, thresholds, resamples=20, device=torch.device("cpu")
+    )
+    lines = error_example_lines(reports[Detection.VALIDATORS])
+    assert lines[0] == (
+        "misses PERSON missed (snippet 1): [Ada Quill] mail ada@example.com now"
+    )

@@ -8,9 +8,14 @@ from rich.table import Table
 
 from edgeveil.cli.data import data_app
 from edgeveil.detector.presets import ModelPreset
+from edgeveil.evaluation.detection import Detection, results_stem
+from edgeveil.spans import EntityType
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from edgeveil.evaluation.accuracy import AccuracyReport
+    from edgeveil.evaluation.bootstrap import Estimate
 
 NOT_IMPLEMENTED_EXIT_CODE = 1
 DEFAULT_DATA_DIR = Path("data")
@@ -94,33 +99,89 @@ def evaluate(
     results_dir: Annotated[
         Path, typer.Option(help="Directory for result files.")
     ] = DEFAULT_RESULTS_DIR,
+    show_errors: Annotated[
+        Detection | None,
+        typer.Option(
+            help="Print every strict error of this detection mode with test-set "
+            "text around it. The text goes to the terminal only, never to a file."
+        ),
+    ] = None,
 ) -> None:
     if (precision, backend) != (Precision.FP32, Backend.TORCH):
         exit_not_implemented("eval", f" for {precision.value} on {backend.value}")
-    from edgeveil.evaluation.accuracy import evaluate_test_set, write_accuracy_results
+    from edgeveil.evaluation.accuracy import (
+        error_example_lines,
+        evaluate_test_set,
+        write_accuracy_results,
+    )
 
     run_name = f"{preset.value}-{precision.value}-{backend.value}"
     thresholds = results_dir / "thresholds" / f"{run_name}.json"
-    report = evaluate_test_set(models_dir / preset.value, test_set, thresholds)
-    path = results_dir / "accuracy" / f"{run_name}.json"
-    write_accuracy_results(report, path)
-    output_console.print(accuracy_summary(report))
-    output_console.print(f"Saved to {path}.")
+    reports = evaluate_test_set(models_dir / preset.value, test_set, thresholds)
+    for detection, report in reports.items():
+        stem = results_stem(detection, preset.value, run_name)
+        path = results_dir / "accuracy" / f"{stem}.json"
+        write_accuracy_results(report, path)
+        output_console.print(f"Saved {detection.value} results to {path}.")
+    output_console.print(accuracy_summary(reports[Detection.MODEL]))
+    output_console.print(ablation_summary(reports))
+    output_console.print(error_summary(reports[Detection.MODEL]))
+    if show_errors is not None:
+        for line in error_example_lines(reports[show_errors]):
+            output_console.print(line, markup=False, highlight=False)
+
+
+def interval_text(estimate: "Estimate") -> str:
+    return f"{estimate.value:.3f} [{estimate.low:.3f}, {estimate.high:.3f}]"
 
 
 def accuracy_summary(report: "AccuracyReport") -> Table:
-    table = Table(title=f"Test set accuracy ({report.snippets} snippets)")
-    for column in ("Type", "Support", "Precision", "Recall", "F1"):
+    snippets = report.run.snippets
+    table = Table(title=f"Test set accuracy, model only ({snippets} snippets)")
+    columns = ("Type", "Support", "Precision", "Recall", "F1")
+    for column in (*columns, "Overlap P", "Overlap R", "Char recall"):
         table.add_column(column)
     for name, scored in report.scores.items():
-        table.add_row(
-            name,
-            str(scored.support),
-            *(
-                f"{estimate.value:.3f} [{estimate.low:.3f}, {estimate.high:.3f}]"
-                for estimate in (scored.precision, scored.recall, scored.f1)
-            ),
+        secondary = report.secondary[name]
+        estimates = (
+            scored.precision,
+            scored.recall,
+            scored.f1,
+            secondary.overlap_precision,
+            secondary.overlap_recall,
+            secondary.char_recall,
         )
+        table.add_row(
+            name, str(scored.support), *(interval_text(item) for item in estimates)
+        )
+    return table
+
+
+def ablation_summary(reports: "Mapping[Detection, AccuracyReport]") -> Table:
+    table = Table(title="Validator ablation, strict F1")
+    table.add_column("Type")
+    for detection in reports:
+        table.add_column(detection.value)
+    for name in reports[Detection.MODEL].scores:
+        f1_cells = [
+            interval_text(report.scores[name].f1) for report in reports.values()
+        ]
+        table.add_row(name, *f1_cells)
+    return table
+
+
+def error_summary(report: "AccuracyReport") -> Table:
+    from edgeveil.evaluation.errors import KINDS_BY_SIDE, error_counts
+
+    counts = error_counts(report.errors)
+    table = Table(title="Strict errors, model only")
+    table.add_column("Type")
+    pairs = [(side, kind) for side, kinds in KINDS_BY_SIDE.items() for kind in kinds]
+    for side, kind in pairs:
+        table.add_column(f"{side.value}: {kind.value}")
+    for entity in EntityType:
+        cells = [str(counts[side][entity][kind]) for side, kind in pairs]
+        table.add_row(entity.value, *cells)
     return table
 
 
