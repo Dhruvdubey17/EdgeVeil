@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from edgeveil.cli import NOT_IMPLEMENTED_EXIT_CODE, app
+from edgeveil.cli import NOT_IMPLEMENTED_EXIT_CODE, USAGE_EXIT_CODE, app
 
 runner = CliRunner()
 
@@ -13,13 +13,27 @@ runner = CliRunner()
     [
         ["scan", "notes.txt"],
         ["proxy", "--port", "8787", "--upstream", "openai"],
-        ["eval", "--precision", "int8", "--backend", "coreml"],
     ],
 )
 def test_unbuilt_commands_exit_with_not_implemented(arguments: list[str]) -> None:
     result = runner.invoke(app, arguments)
     assert result.exit_code == NOT_IMPLEMENTED_EXIT_CODE
     assert f"edgeveil {arguments[0]}: not implemented yet" in result.stderr
+
+
+@pytest.mark.parametrize("command", ["eval", "export"])
+def test_unsupported_precision_names_the_supported_ones(command: str) -> None:
+    arguments = [command, "--precision", "int8", "--backend", "onnxruntime"]
+    result = runner.invoke(app, arguments)
+    assert result.exit_code == USAGE_EXIT_CODE
+    assert "int8-dynamic" in result.stderr
+
+
+def test_eval_of_a_missing_build_says_how_to_build_it(tmp_path: Path) -> None:
+    arguments = ["eval", "--precision", "fp16", "--backend", "onnxruntime"]
+    result = runner.invoke(app, [*arguments, "--models-dir", str(tmp_path)])
+    assert result.exit_code == USAGE_EXIT_CODE
+    assert "edgeveil export --backend onnxruntime --precision fp16" in result.stderr
 
 
 def test_without_arguments_shows_every_command() -> None:

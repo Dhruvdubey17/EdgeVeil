@@ -7,6 +7,13 @@ from rich.console import Console
 from rich.table import Table
 
 from edgeveil.cli.data import data_app
+from edgeveil.detector.builds import (
+    Backend,
+    ComputeUnits,
+    Precision,
+    UnsupportedBuildError,
+    check_supported,
+)
 from edgeveil.detector.presets import ModelPreset
 from edgeveil.evaluation.detection import Detection, results_stem
 from edgeveil.spans import EntityType
@@ -18,6 +25,8 @@ if TYPE_CHECKING:
     from edgeveil.evaluation.bootstrap import Estimate
 
 NOT_IMPLEMENTED_EXIT_CODE = 1
+USAGE_EXIT_CODE = 2
+BYTES_PER_MEGABYTE = 1_000_000
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_MODELS_DIR = Path("models")
 DEFAULT_LOGGING_STEPS = 100
@@ -41,23 +50,73 @@ class Upstream(StrEnum):
     OLLAMA = "ollama"
 
 
-class Precision(StrEnum):
-    FP32 = "fp32"
-    FP16 = "fp16"
-    INT8 = "int8"
-    INT4 = "int4"
-
-
-class Backend(StrEnum):
-    TORCH = "torch"
-    ONNXRUNTIME = "onnxruntime"
-    COREML = "coreml"
-    QUALCOMM = "qualcomm"
-
-
 def exit_not_implemented(command: str, detail: str = "") -> NoReturn:
     error_console.print(f"edgeveil {command}: not implemented yet{detail}")
     raise typer.Exit(code=NOT_IMPLEMENTED_EXIT_CODE)
+
+
+def exit_unsupported(command: str, error: UnsupportedBuildError) -> NoReturn:
+    error_console.print(f"edgeveil {command}: {error}")
+    raise typer.Exit(code=USAGE_EXIT_CODE)
+
+
+def exit_if_unbuilt(
+    command: str, model_dir: Path, backend: Backend, precision: Precision
+) -> None:
+    from edgeveil.detector.builds import build_path
+
+    path = build_path(model_dir, backend, precision)
+    if not path.exists():
+        error_console.print(
+            f"edgeveil {command}: {path} does not exist; build it with "
+            f"edgeveil export --backend {backend.value} --precision {precision.value}"
+        )
+        raise typer.Exit(code=USAGE_EXIT_CODE)
+
+
+def checked_build(command: str, backend: Backend, precision: Precision) -> None:
+    try:
+        check_supported(backend, precision)
+    except UnsupportedBuildError as error:
+        exit_unsupported(command, error)
+
+
+@app.command(
+    name="export",
+    help="Build the trained model for one backend and precision under the models "
+    "directory. Quantized ONNX builds start from the fp32 ONNX build.",
+)
+def export_build(
+    precision: Annotated[Precision, typer.Option(help="Precision to build.")],
+    backend: Annotated[
+        Backend, typer.Option(help="Backend to build for.")
+    ] = Backend.ONNXRUNTIME,
+    preset: Annotated[
+        ModelPreset, typer.Option(help="Trained model to export.")
+    ] = ModelPreset.DISTILBERT,
+    models_dir: Annotated[
+        Path, typer.Option(help="Directory with trained models.")
+    ] = DEFAULT_MODELS_DIR,
+    data_dir: Annotated[
+        Path, typer.Option(help="Directory with prepared data, for calibration.")
+    ] = DEFAULT_DATA_DIR,
+) -> None:
+    checked_build("export", backend, precision)
+    model_dir = models_dir / preset.value
+    if backend is Backend.ONNXRUNTIME:
+        from edgeveil.export.onnx_builds import build_onnx
+
+        path = build_onnx(model_dir, precision, data_dir)
+    else:
+        exit_not_implemented("export", f" for {backend.value}")
+    output_console.print(f"Saved {path} ({build_megabytes(path):.1f} MB).")
+
+
+def build_megabytes(path: Path) -> float:
+    files = [path] if path.is_file() else list(path.rglob("*"))
+    return sum(item.stat().st_size for item in files if item.is_file()) / (
+        BYTES_PER_MEGABYTE
+    )
 
 
 @app.command(help="Print the masked text and the detected spans.")
@@ -99,6 +158,10 @@ def evaluate(
     results_dir: Annotated[
         Path, typer.Option(help="Directory for result files.")
     ] = DEFAULT_RESULTS_DIR,
+    compute_units: Annotated[
+        ComputeUnits,
+        typer.Option(help="Core ML compute units; other backends ignore it."),
+    ] = ComputeUnits.ALL,
     show_errors: Annotated[
         Detection | None,
         typer.Option(
@@ -107,19 +170,31 @@ def evaluate(
         ),
     ] = None,
 ) -> None:
-    if (precision, backend) != (Precision.FP32, Backend.TORCH):
-        exit_not_implemented("eval", f" for {precision.value} on {backend.value}")
+    checked_build("eval", backend, precision)
+    from edgeveil.detector.builds import (
+        build_record,
+        load_detector,
+        reference_thresholds_name,
+        run_name,
+    )
     from edgeveil.evaluation.accuracy import (
         error_example_lines,
         evaluate_test_set,
+        load_thresholds,
         write_accuracy_results,
     )
 
-    run_name = f"{preset.value}-{precision.value}-{backend.value}"
-    thresholds = results_dir / "thresholds" / f"{run_name}.json"
-    reports = evaluate_test_set(models_dir / preset.value, test_set, thresholds)
+    model_dir = models_dir / preset.value
+    exit_if_unbuilt("eval", model_dir, backend, precision)
+    thresholds = results_dir / "thresholds" / reference_thresholds_name(preset.value)
+    detector = load_detector(
+        model_dir, backend, precision, load_thresholds(thresholds), compute_units
+    )
+    build = build_record(model_dir, backend, precision, compute_units)
+    name = run_name(preset.value, backend, precision, compute_units)
+    reports = evaluate_test_set(detector, build, test_set, thresholds)
     for detection, report in reports.items():
-        stem = results_stem(detection, preset.value, run_name)
+        stem = results_stem(detection, preset.value, name)
         path = results_dir / "accuracy" / f"{stem}.json"
         write_accuracy_results(report, path)
         output_console.print(f"Saved {detection.value} results to {path}.")

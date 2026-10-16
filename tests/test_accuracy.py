@@ -9,8 +9,11 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
+from edgeveil.detector.builds import Backend, Precision, build_record
 from edgeveil.detector.labels import ID_TO_LABEL, LABEL_TO_ID
+from edgeveil.detector.torch_backend import TorchDetector
 from edgeveil.evaluation.accuracy import (
+    AccuracyReport,
     UnsupportedConfigurationError,
     error_example_lines,
     evaluate_test_set,
@@ -56,6 +59,16 @@ def tiny_setup(
     return model_dir, test_set, thresholds
 
 
+def evaluate_tiny(
+    model_dir: Path, test_set: Path, thresholds: Path, resamples: int
+) -> dict[Detection, AccuracyReport]:
+    detector = TorchDetector(
+        model_dir, load_thresholds(thresholds), device=torch.device("cpu")
+    )
+    build = build_record(model_dir, Backend.TORCH, Precision.FP32)
+    return evaluate_test_set(detector, build, test_set, thresholds, resamples=resamples)
+
+
 def test_thresholds_are_read_per_type(tiny_setup: tuple[Path, Path, Path]) -> None:
     _, _, thresholds = tiny_setup
     assert load_thresholds(thresholds) == dict.fromkeys(EntityType, 0.5)
@@ -72,9 +85,7 @@ def test_evaluation_scores_every_gold_type_and_writes_numbers_only(
     tiny_setup: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
     model_dir, test_set, thresholds = tiny_setup
-    reports = evaluate_test_set(
-        model_dir, test_set, thresholds, resamples=50, device=torch.device("cpu")
-    )
+    reports = evaluate_tiny(model_dir, test_set, thresholds, resamples=50)
     assert set(reports) == set(Detection)
     report = reports[Detection.MODEL]
     assert report.run.snippets == 3
@@ -103,9 +114,7 @@ def test_validators_alone_find_the_email_and_miss_the_name(
     tiny_setup: tuple[Path, Path, Path],
 ) -> None:
     model_dir, test_set, thresholds = tiny_setup
-    reports = evaluate_test_set(
-        model_dir, test_set, thresholds, resamples=20, device=torch.device("cpu")
-    )
+    reports = evaluate_tiny(model_dir, test_set, thresholds, resamples=20)
     validators = reports[Detection.VALIDATORS]
     assert validators.scores["EMAIL"].recall.value == 1.0
     assert validators.secondary["EMAIL"].char_recall.value == 1.0
@@ -118,9 +127,7 @@ def test_error_examples_show_the_span_in_its_context(
     tiny_setup: tuple[Path, Path, Path],
 ) -> None:
     model_dir, test_set, thresholds = tiny_setup
-    reports = evaluate_test_set(
-        model_dir, test_set, thresholds, resamples=20, device=torch.device("cpu")
-    )
+    reports = evaluate_tiny(model_dir, test_set, thresholds, resamples=20)
     lines = error_example_lines(reports[Detection.VALIDATORS])
     assert lines[0] == (
         "misses PERSON missed (snippet 1): [Ada Quill] mail ada@example.com now"

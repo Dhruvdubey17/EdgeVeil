@@ -1,4 +1,3 @@
-import hashlib
 import json
 from collections import Counter
 from collections.abc import Sequence
@@ -6,11 +5,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-import torch
-
 from edgeveil.bench.environment import environment_record
 from edgeveil.detector.alignment import Offset
-from edgeveil.detector.torch_backend import TorchDetector
+from edgeveil.detector.builds import TORCH_WEIGHTS_NAME, BuildRecord, file_sha256
+from edgeveil.detector.protocol import BatchDetector
 from edgeveil.evaluation.bootstrap import (
     BOOTSTRAP_RESAMPLES,
     BOOTSTRAP_SEED,
@@ -39,7 +37,6 @@ from edgeveil.validators.finders import find_validator_spans
 RESULT_DECIMALS = 4
 EXAMPLE_CONTEXT_CHARACTERS = 30
 TRAINING_RECORD_NAME = "training_run.json"
-MODEL_WEIGHTS_NAME = "model.safetensors"
 SECONDARY_SCORING = {
     "overlap": "a span matches if it overlaps a span of the same type",
     "char_recall": "share of gold span characters covered by any emitted span",
@@ -54,6 +51,7 @@ class UnsupportedConfigurationError(ValueError):
 class RunInfo:
     model_dir: str
     model_sha256: str
+    build: BuildRecord
     test_set_path: str
     test_set_sha256: str
     snippets: int
@@ -81,10 +79,6 @@ def load_thresholds(path: Path) -> dict[EntityType, float]:
             f"thresholds file lacks {', '.join(missing)}"
         )
     return {entity: float(chosen[entity.value]["threshold"]) for entity in EntityType}
-
-
-def file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def score_detection(
@@ -118,15 +112,15 @@ def score_detection(
 
 
 def evaluate_test_set(
-    model_dir: Path,
+    detector: BatchDetector,
+    build: BuildRecord,
     test_set_path: Path,
     thresholds_path: Path,
     resamples: int = BOOTSTRAP_RESAMPLES,
-    device: torch.device | None = None,
 ) -> dict[Detection, AccuracyReport]:
     snippets = load_test_set(test_set_path)
     thresholds = load_thresholds(thresholds_path)
-    detector = TorchDetector(model_dir, thresholds, device=device)
+    model_dir = Path(build.model_dir)
     texts = [snippet.text for snippet in snippets]
     model_spans = detector.detect_batch(texts)
     validator_spans = [find_validator_spans(text) for text in texts]
@@ -146,7 +140,8 @@ def evaluate_test_set(
     )
     run = RunInfo(
         model_dir=str(model_dir),
-        model_sha256=file_sha256(model_dir / MODEL_WEIGHTS_NAME),
+        model_sha256=file_sha256(model_dir / TORCH_WEIGHTS_NAME),
+        build=build,
         test_set_path=str(test_set_path),
         test_set_sha256=file_sha256(test_set_path),
         snippets=len(snippets),
@@ -190,8 +185,10 @@ def write_accuracy_results(report: AccuracyReport, path: Path) -> None:
         "base_model_revision": training.get("base_model_revision"),
         "training_dataset_revision": training.get("dataset_revision"),
         "trained_on": training.get("accelerator"),
-        "precision": "fp32",
-        "backend": "torch",
+        "precision": run.build.precision,
+        "backend": run.build.backend,
+        "compute_units": run.build.compute_units,
+        "build": asdict(run.build),
         "test_set": {
             "path": run.test_set_path,
             "sha256": run.test_set_sha256,
