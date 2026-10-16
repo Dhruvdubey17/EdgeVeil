@@ -126,6 +126,10 @@ The first run of `edgeveil eval` on the hand-labeled test set (235 snippets, 202
 - Thresholds were applied per token. With EMAIL at 0.80 and CREDENTIAL at 0.95, one inner token below the threshold cut a span in two (`P@ssw0rd-Linden` from a longer password).
 - The test set exposed both problems, so the evaluation after the fixes is not fully independent of the test set. The fixes are tuned on validation only, and no threshold or rule is chosen by looking at test-set scores.
 
+## Second test-set evaluation
+
+After both fixes (span-level thresholds and email domain rewriting), the model was retrained on a Kaggle T4 (10,300 steps, 3,642 s), thresholds were retuned on validation, and the same 235-snippet test set was scored once (2026-10-16). Strict overall F1 went from 0.561 to 0.702 [0.652, 0.748], EMAIL from 0.000 to 0.805 [0.689, 0.918], and PERSON from 0.805 to 0.896. CREDIT_CARD recall stayed at 0.293 with precision 1.000, PHONE and ADDRESS precision stayed low (0.516 and 0.474), and CREDENTIAL recall was 0.500. The two fixes were applied together, so this run does not separate their effects. Results: `bench/results/accuracy/distilbert-fp32-torch.json`, table in `bench/results/tables/`.
+
 ## Email domain rewriting
 
 `edgeveil data augment` rewrites the domain of `EMAIL_DOMAIN_REWRITE_SHARE` (25%) of email spans in both splits, after the name connectors and before credential insertion. Half the new domains are `example.com`, `example.org`, or `example.net`; the rest are generated names under `.test` (`mail.harbor.test`, `copper-orbit.test`). Every one is a reserved name, so the rewrite cannot produce a real address. The credential template URL moved from `api.example.com` to `api.orders.invalid`. On the 2026-10-15 rebuild, 23,161 of 91,238 train emails and 5,762 of 22,794 validation emails were rewritten, and `example.com`/`example.org` outside email spans fell from 413 to 136 occurrences in train, all from OpenPII's own text. The change came from the first test-set evaluation (see above).
