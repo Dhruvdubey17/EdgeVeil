@@ -1,5 +1,6 @@
 from itertools import pairwise
 
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from transformers import PreTrainedTokenizerFast
@@ -8,6 +9,7 @@ from edgeveil.detector.alignment import SPECIAL_TOKEN_OFFSET
 from edgeveil.detector.windows import (
     MAX_WINDOW_TOKENS,
     WINDOW_OVERLAP_TOKENS,
+    InvalidWindowLayoutError,
     encode_windows,
     special_token_frame,
     trim_offset_whitespace,
@@ -35,6 +37,12 @@ def test_windows_cover_every_token(
     assert all(
         later - earlier == capacity - overlap for earlier, later in pairwise(starts)
     )
+
+
+@pytest.mark.parametrize(("capacity", "overlap"), [(14, 14), (14, 128), (14, -1)])
+def test_overlap_outside_the_capacity_is_rejected(capacity: int, overlap: int) -> None:
+    with pytest.raises(InvalidWindowLayoutError):
+        window_starts(100, capacity, overlap)
 
 
 def test_defaults_match_the_spec() -> None:

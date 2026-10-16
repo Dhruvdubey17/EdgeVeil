@@ -18,7 +18,15 @@ class Window:
     offsets: list[Offset]
 
 
+class InvalidWindowLayoutError(ValueError):
+    pass
+
+
 def window_starts(token_count: int, capacity: int, overlap: int) -> list[int]:
+    if not 0 <= overlap < capacity:
+        raise InvalidWindowLayoutError(
+            f"overlap {overlap} must be at least 0 and below capacity {capacity}"
+        )
     step = capacity - overlap
     starts = [0]
     while starts[-1] + capacity < token_count:
