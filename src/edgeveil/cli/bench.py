@@ -270,3 +270,37 @@ def power(
             f"{loop_path.stem}: {total:.1f} mJ per window above idle, "
             f"{report.windows_per_second:.1f} windows/s. Saved {path}."
         )
+
+
+@bench_app.command(
+    name="activation-ranges",
+    help="Compare each activation's calibrated INT8 range in the static ONNX build "
+    "with its FP32 magnitudes on the calibration windows, and save the result.",
+)
+def activation_ranges(
+    preset: PresetOption = ModelPreset.DISTILBERT,
+    models_dir: ModelsDir = DEFAULT_MODELS_DIR,
+    data_dir: Annotated[
+        Path, typer.Option(help="Directory with prepared data, for calibration.")
+    ] = DEFAULT_DATA_DIR,
+    results_dir: ResultsDir = DEFAULT_RESULTS_DIR,
+) -> None:
+    from edgeveil.bench.activation_ranges import (
+        activation_ranges as measure,
+    )
+    from edgeveil.bench.activation_ranges import write_activation_ranges
+    from edgeveil.detector.builds import build_path
+    from edgeveil.detector.windows import load_tokenizer
+    from edgeveil.export.calibration import validation_sample
+
+    model_dir = models_dir / preset.value
+    fp32 = build_path(model_dir, Backend.ONNXRUNTIME, Precision.FP32)
+    static = build_path(model_dir, Backend.ONNXRUNTIME, Precision.INT8_STATIC)
+    windows = validation_sample(data_dir, load_tokenizer(model_dir)).calibration
+    records = measure(fp32, static, windows)
+    name = f"{preset.value}-{Precision.INT8_STATIC.value}-onnxruntime.json"
+    path = results_dir / "quantization" / name
+    write_activation_ranges(records, static, len(windows), path)
+    console.print(
+        f"{len(records)} activations over {len(windows)} windows. Saved {path}."
+    )
