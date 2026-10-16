@@ -59,6 +59,7 @@ class RunInfo:
     snippets: int
     spans_by_type: dict[str, int]
     thresholds_path: str
+    thresholds_sha256: str
     thresholds: dict[str, float]
     resamples: int
 
@@ -151,6 +152,7 @@ def evaluate_test_set(
         snippets=len(snippets),
         spans_by_type=dict(sorted(spans_by_type.items())),
         thresholds_path=str(thresholds_path),
+        thresholds_sha256=file_sha256(thresholds_path),
         thresholds={entity.value: value for entity, value in thresholds.items()},
         resamples=resamples,
     )
@@ -183,6 +185,7 @@ def write_accuracy_results(report: AccuracyReport, path: Path) -> None:
         "preset": Path(run.model_dir).name,
         "model_dir": run.model_dir,
         "model_sha256": run.model_sha256,
+        "thresholds_sha256": run.thresholds_sha256,
         "base_model": training.get("base_model"),
         "base_model_revision": training.get("base_model_revision"),
         "training_dataset_revision": training.get("dataset_revision"),

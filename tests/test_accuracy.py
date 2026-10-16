@@ -96,6 +96,7 @@ def test_evaluation_scores_every_gold_type_and_writes_numbers_only(
     }
     assert len(payload["test_set"]["sha256"]) == 64
     assert len(payload["model_sha256"]) == 64
+    assert len(payload["thresholds_sha256"]) == 64
 
 
 def test_validators_alone_find_the_email_and_miss_the_name(
