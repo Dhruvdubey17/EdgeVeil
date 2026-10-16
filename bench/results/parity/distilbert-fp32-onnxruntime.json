@@ -1,0 +1,52 @@
+{
+  "precision": "fp32",
+  "backend": "onnxruntime",
+  "compute_units": null,
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "onnxruntime",
+    "precision": "fp32",
+    "compute_units": null,
+    "path": "models/distilbert/onnx/fp32.onnx",
+    "sha256": "baa4099985a477d99ebf88789aac07d46fbe3e088370ec5791291da5560a9d03",
+    "size_bytes": 261753063,
+    "quantization": "FP32 weights and activations"
+  },
+  "model_sha256": "c0eafef1bf82eec0c88765986160ff0874b2a74812e717fb4918a5549b502c06",
+  "reference": "torch fp32 on CPU, same tokenizer and windows",
+  "agreement": "share of non-special tokens whose highest-scoring BIO label matches the reference; entity agreement counts only tokens the reference labels as an entity",
+  "sample": {
+    "split": "validation",
+    "seed": 20261016,
+    "windows": 2000,
+    "rows_considered": 4000,
+    "disjoint_from_calibration": true
+  },
+  "parity": {
+    "windows": 2000,
+    "tokens": 192275,
+    "token_agreement": 1.0,
+    "reference_entity_tokens": 59252,
+    "entity_token_agreement": 1.0,
+    "max_abs_logit_difference": 4e-05,
+    "mean_abs_logit_difference": 1e-06
+  },
+  "environment": {
+    "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "datasets": "5.1.0",
+      "seqeval": "1.2.2",
+      "onnxruntime": "1.30.0",
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
+    }
+  }
+}

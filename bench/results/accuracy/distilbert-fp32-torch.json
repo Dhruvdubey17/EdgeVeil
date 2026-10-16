@@ -10,6 +10,17 @@
   "trained_on": "Tesla T4",
   "precision": "fp32",
   "backend": "torch",
+  "compute_units": null,
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "torch",
+    "precision": "fp32",
+    "compute_units": null,
+    "path": "models/distilbert/model.safetensors",
+    "sha256": "c0eafef1bf82eec0c88765986160ff0874b2a74812e717fb4918a5549b502c06",
+    "size_bytes": 260828276,
+    "quantization": "FP32 weights and activations"
+  },
   "test_set": {
     "path": "data/test/test_set.jsonl",
     "sha256": "b55e26ee4db2d7a1d75276962cd0cc79ff49a1ffbd66c40c41827db62f9e0247",

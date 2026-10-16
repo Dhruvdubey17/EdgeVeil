@@ -1,4 +1,4 @@
-Detection: validators only. distilbert/distilbert-base-cased, fp32, torch. Test set: 235 snippets. Intervals: 1000 bootstrap resamples by snippet. Source: `bench/results/accuracy/distilbert-validators.json`.
+Detection: validators only. No model. Test set: 235 snippets. Intervals: 1000 bootstrap resamples by snippet. Source: `bench/results/accuracy/distilbert-validators.json`.
 
 Strict precision, recall, and F1 are the headline. Overlap scores count a span as matched if it overlaps a span of the same type. Char recall is the share of gold span characters covered by any emitted span.
 

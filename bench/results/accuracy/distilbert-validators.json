@@ -8,8 +8,10 @@
   "base_model_revision": "6ea81172465e8b0ad3fddeed32b986cdcdcffcf0",
   "training_dataset_revision": "a785eb528e28be2693c3718a27e066970de5dadb",
   "trained_on": "Tesla T4",
-  "precision": "fp32",
-  "backend": "torch",
+  "precision": null,
+  "backend": null,
+  "compute_units": null,
+  "build": null,
   "test_set": {
     "path": "data/test/test_set.jsonl",
     "sha256": "b55e26ee4db2d7a1d75276962cd0cc79ff49a1ffbd66c40c41827db62f9e0247",

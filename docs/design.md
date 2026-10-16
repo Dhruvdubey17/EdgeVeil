@@ -315,3 +315,57 @@ Model and validators, strict errors:
 - The entropy validator flags a base64 PNG in a data URI (snippet 181), a hard negative.
 - PHONE recall with both (0.929) is below validators alone (0.952) for the same reason: a model ADDRESS span over part of a phone number blocks the phone validator there (snippets 207 and 214, and 231, where the ADDRESS span starts at the phone number).
 - Full tables: `bench/results/tables/ablation-distilbert-fp32-torch.md` and the three `accuracy-*.md` files.
+
+## Tokenizer without transformers
+
+Every backend loads `tokenizer.json` through `tokenizers` (0.23.2) and windows text with the same code, so the ONNX Runtime and Core ML paths import neither torch nor transformers (a test checks `sys.modules`). Training still uses the transformers tokenizer object and passes its `backend_tokenizer` to the same windowing. `tests/test_tokenizer_parity.py` encodes all 40,738 validation rows both ways, through the transformers call the training run used and through `tokenizers` alone, and finds no row whose window ids or offsets differ. The test skips when the local model or data is absent, as in CI.
+
+## ONNX export
+
+- Exporter: `torch.onnx.export` with `dynamo=True`, opset 18, dynamic batch and sequence axes (sequence at most 512), weights in one 261.8 MB file. Optimum was the first choice; optimum-onnx 0.1.0 requires transformers below 4.58 and the lock has 5.19.
+- The model is wrapped to return only the logits tensor, with inputs `input_ids` and `attention_mask` (DistilBERT has no token type ids).
+- Fidelity: on 2,000 validation windows (192,275 tokens), the fp32 ONNX build and fp32 torch on CPU pick the same label for every token, with a largest logit difference of 4e-5. Dev-test scores are identical for every type.
+
+## Quantized ONNX builds
+
+| Precision | Method | Size (MB) |
+|---|---|---|
+| fp32 | export | 261.8 |
+| fp16 | `onnxruntime.transformers.float16.convert_float_to_float16`, FP32 inputs and outputs kept | 131.3 |
+| int8-dynamic | `quantize_dynamic`, INT8 weights | 66.2 |
+| int8-static | `quantize_static`, QDQ, per-channel INT8 weights, INT8 activations, MinMax over 300 validation windows | 66.5 |
+| int4 | `MatMulNBitsQuantizer`, 4 bits, block 32, symmetric | 118.3 |
+
+- Calibration and parity windows come from one seeded shuffle of validation (seed 20261016). Rows go to calibration until it has 300 windows, then to parity until it has 2,000, so no row feeds both.
+- `quant_pre_process` fails on the dynamo graph in its symbolic shape inference ("Incomplete symbolic shape inference"). On failure, onnxruntime 1.30 also writes `sym_shape_infer_temp.onnx` and a 260 MB external data file into the working directory (`onnxruntime/tools/symbolic_shape_infer.py`, line 3059). Both INT8 builds run it with `skip_symbolic_shape=True`, keeping ONNX shape inference and graph optimization. The dynamo graph already carries shapes.
+- MinMax calibration adds a ReduceMin and ReduceMax output per tensor, so it keeps scalars, not activations, and 300 windows fit in memory without batching. Its `CalibMaxIntermediateOutputs` option is not used: in onnxruntime 1.30, `MinMaxCalibrater.collect_data` clears the collected outputs when the limit is hit without computing their ranges first.
+- All three integer builds quantize the 37 weight MatMuls (six per layer plus the classifier). In int8-dynamic and int4 the 12 attention MatMuls, which multiply two activations, stay in floating point; int8-static puts QDQ pairs on those as well. Both INT8 builds also quantize the 89 MB token embedding to 22 MB. INT4 leaves it in FP32, which is why it is larger than either INT8 build.
+- Per-channel quantization warns for LayerNorm weights (rank 1, no axis 1); those fall back to per-tensor.
+- All builds are scored with the fp32 torch thresholds (`bench/results/thresholds/distilbert-fp32-torch.json`, SHA-256 6d28049...a39a). They are not retuned per precision, so a score change is the build's effect alone.
+
+## ONNX parity and dev-test accuracy
+
+Token agreement with fp32 torch on CPU, 2,000 validation windows, 192,275 tokens, 59,252 of them labeled as an entity by the reference. Files: `bench/results/parity/distilbert-*-onnxruntime.json`.
+
+| Precision | Token agreement | Entity token agreement | Max logit difference | Mean logit difference |
+|---|---|---|---|---|
+| fp32 | 1.0000 | 1.0000 | 0.00004 | 0.000001 |
+| fp16 | 1.0000 | 1.0000 | 0.0134 | 0.0004 |
+| int8-dynamic | 0.9993 | 0.9979 | 3.80 | 0.130 |
+| int8-static | 0.9960 | 0.9886 | 10.85 | 0.430 |
+| int4 | 0.9996 | 0.9989 | 3.36 | 0.111 |
+
+Dev-test strict F1, overall (235 snippets; this set informed earlier fixes, so scores are optimistic). Files: `bench/results/accuracy/distilbert-*-onnxruntime*.json`.
+
+| Precision | Model only (95% CI) | Model and validators |
+|---|---|---|
+| torch fp32 | 0.729 [0.682, 0.772] | 0.836 |
+| fp32 | 0.729 [0.682, 0.772] | 0.836 |
+| fp16 | 0.728 [0.681, 0.771] | 0.836 |
+| int8-dynamic | 0.716 [0.662, 0.762] | 0.827 |
+| int8-static | 0.619 [0.568, 0.673] | 0.780 |
+| int4 | 0.723 [0.675, 0.766] | 0.825 |
+
+- fp16 emits one more PHONE span than fp32, with the wrong boundary, over a number fp32 typed as something else (PHONE precision 0.532 to 0.524, recall unchanged).
+- int8-static is the one build whose interval does not overlap fp32's. Model-only EMAIL F1 falls from 0.881 to 0.560, PERSON from 0.948 to 0.861, PHONE from 0.635 to 0.447. Token agreement is still 99.6%, but 674 of its 778 disagreeing tokens are entity tokens, and strict matching fails a whole span when one of its tokens flips. With validators the EMAIL loss disappears (0.977) because the email validator sets those boundaries, and overall falls 0.836 to 0.780. The cause has not been isolated: this build puts QDQ pairs in front of every operator the quantizer supports (all 49 MatMuls, LayerNormalization, Softmax, Add, and the Mul and Div inside GELU), with per-tensor MinMax activation ranges. Per the milestone plan, it is reported as a finding and not tuned.
+- int8-dynamic and int4 stay within 0.015 of fp32 overall.
