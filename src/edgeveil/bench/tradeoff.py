@@ -146,7 +146,14 @@ def power_cell(payload: Mapping[str, Any] | None) -> str:
 
 
 def size_cell(results: BuildResults) -> str:
-    for payload in (results.accuracy, results.latency, results.parity):
+    payloads = (
+        results.accuracy,
+        results.latency,
+        results.parity,
+        results.placement,
+        results.power,
+    )
+    for payload in payloads:
         if payload is not None and payload.get("build"):
             return f"{payload['build']['size_bytes'] / BYTES_PER_MEGABYTE:.1f}"
     return NOT_MEASURED
