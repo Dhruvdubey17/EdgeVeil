@@ -481,3 +481,20 @@ Parity and dev-test accuracy (`bench/results/parity/` and `bench/results/accurac
 | int4 | cpu-and-ne | 0.999428 | 0.998684 | 2.575 | 0.696 [0.642, 0.744] | 0.812 |
 
 - fp16 on the Neural Engine disagrees with fp32 torch on 1 of 192,275 validation tokens. On the dev-test set it differs by one span: an ADDRESS span whose boundary moves (ADDRESS F1 0.608 to 0.592, overall 0.729 to 0.727, intervals overlapping). This is counted as within parity tolerance; it is not bit-identical.
+
+Latency of the Neural Engine layout (same machine and method as the latency section above, other apps closed, no thermal warning before or after any run; files `bench/results/latency/distilbert-*-coreml-ane-*.json`), p50 / p95 in ms:
+
+| Build | Compute units | 128 tokens | 256 tokens | 512 tokens |
+|---|---|---|---|---|
+| fp16 | all | 1.74 / 2.20 | 2.37 / 2.44 | 6.33 / 6.38 |
+| fp16 | cpu-and-ne | 1.75 / 2.79 | 2.37 / 2.44 | 6.32 / 6.38 |
+| int8 | all | 3.34 / 4.54 | 3.81 / 4.70 | 5.45 / 5.50 |
+| int8 | cpu-and-ne | 1.28 / 3.84 | 2.43 / 2.50 | 5.46 / 5.56 |
+| int4 | all | 11.57 / 12.47 | 16.07 / 16.42 | 26.47 / 27.09 |
+| int4 | cpu-and-ne | 28.15 / 28.39 | 64.46 / 64.81 | 145.92 / 146.46 |
+
+- fp16 on the Neural Engine runs a 512-token window in 6.38 ms at p95, against the spec target of 50 ms. That is 4.0x faster than the fastest v1 Core ML CPU build (25.94 ms, cpu-only) and 25x faster than ONNX Runtime fp32 on the CPU (162.63 ms).
+- int8 is slightly faster than fp16 at 512 tokens (5.50 against 6.38 ms p95) and loses 0.003 dev-test F1.
+- At 128 tokens the p95 is well above the p50 for several settings (int8 cpu-and-ne 1.28 / 3.84 ms). The timings files keep all 200 calls; the spread has not been investigated.
+- int4 does not reach the Neural Engine (placement above): on all it runs on the GPU at 27.09 ms p95, and on cpu-and-ne it falls back to the CPU at 146.46 ms.
+- Energy per window: not measured yet. It needs `bash scripts/measure_power.sh`, which runs `powermetrics` with sudo (docs/benchmarks.md).
