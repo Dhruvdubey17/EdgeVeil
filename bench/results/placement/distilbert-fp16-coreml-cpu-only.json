@@ -1,0 +1,74 @@
+{
+  "precision": "fp16",
+  "backend": "coreml",
+  "compute_units": "cpu-only",
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "coreml",
+    "precision": "fp16",
+    "compute_units": "cpu-only",
+    "path": "models/distilbert/coreml/fp16.mlpackage",
+    "sha256": "5e68967580612d8b94306af898b0d84767a513322e522e2a505618970d80d1f2",
+    "size_bytes": 130514566,
+    "quantization": "FP16 weights and activations"
+  },
+  "source": "coremltools MLComputePlan: preferred compute device per ML Program operation in the main function; operations without a device usage are counted as unassigned and left out of the shares",
+  "operations": 231,
+  "unassigned_operations": 317,
+  "by_device": {
+    "unassigned": 317,
+    "cpu": 231
+  },
+  "cost_by_device": {
+    "cpu": 1.0
+  },
+  "neural_engine_share": 0.0,
+  "neural_engine_cost_share": 0.0,
+  "operators_off_neural_engine": {
+    "cpu": {
+      "ios18.linear": 37,
+      "ios18.cast": 25,
+      "ios18.reshape": 24,
+      "ios18.transpose": 24,
+      "ios18.add": 20,
+      "ios18.layer_norm": 13,
+      "ios18.matmul": 12,
+      "ios18.gather": 10,
+      "shape": 10,
+      "ios18.concat": 9,
+      "ios18.mul": 7,
+      "ios18.expand_dims": 6,
+      "ios18.softmax": 6,
+      "ios18.gelu": 6,
+      "select": 4,
+      "tile": 3,
+      "ios18.greater_equal": 2,
+      "ios18.slice_by_index": 2,
+      "range_1d": 2,
+      "ios18.logical_and": 2,
+      "ios18.equal": 2,
+      "ios18.real_div": 2,
+      "stack": 1,
+      "ios18.gather_nd": 1,
+      "ios18.sub": 1
+    }
+  },
+  "environment": {
+    "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "datasets": "5.1.0",
+      "seqeval": "1.2.2",
+      "onnxruntime": "1.30.0",
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
+    }
+  }
+}

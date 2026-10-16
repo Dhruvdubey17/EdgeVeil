@@ -456,6 +456,8 @@
   },
   "environment": {
     "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
     "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
     "python": "3.13.13",
     "packages": {
@@ -465,7 +467,9 @@
       "datasets": "5.1.0",
       "seqeval": "1.2.2",
       "onnxruntime": "1.30.0",
-      "coremltools": "9.0"
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
     }
   }
 }

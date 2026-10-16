@@ -369,3 +369,66 @@ Dev-test strict F1, overall (235 snippets; this set informed earlier fixes, so s
 - fp16 emits one more PHONE span than fp32, with the wrong boundary, over a number fp32 typed as something else (PHONE precision 0.532 to 0.524, recall unchanged).
 - int8-static is the one build whose interval does not overlap fp32's. Model-only EMAIL F1 falls from 0.881 to 0.560, PERSON from 0.948 to 0.861, PHONE from 0.635 to 0.447. Token agreement is still 99.6%, but 674 of its 778 disagreeing tokens are entity tokens, and strict matching fails a whole span when one of its tokens flips. With validators the EMAIL loss disappears (0.977) because the email validator sets those boundaries, and overall falls 0.836 to 0.780. The cause has not been isolated: this build puts QDQ pairs in front of every operator the quantizer supports (all 49 MatMuls, LayerNormalization, Softmax, Add, and the Mul and Div inside GELU), with per-tensor MinMax activation ranges. Per the milestone plan, it is reported as a finding and not tuned.
 - int8-dynamic and int4 stay within 0.015 of fp32 overall.
+
+## Core ML conversion
+
+- Path: `torch.jit.trace` of the logits wrapper at (1, 512), then `coremltools.convert` to an ML Program with FP16 compute, minimum target macOS 15, and `EnumeratedShapes` of (1, 128), (1, 256), (1, 512) for both int32 inputs, default (1, 512). The backend pads each window to the smallest enumerated length that fits, with attention mask 0 on the padding.
+- coremltools 9.0 has no converter for `Tensor.new_ones`, which transformers 5.19 calls in `masking_utils.and_masks` while building the bidirectional mask, so the first conversion stopped with "PyTorch convert function for op 'new_ones' not implemented". coremltools 9.0 lists torch 2.7 as its newest tested version; this project runs torch 2.14.1. `edgeveil.export.coreml_ops` registers a converter through coremltools' `register_torch_op`, the same pattern as its own `new_zeros` and `new_full`: a `fill` of ones whose dtype is the source tensor's unless one is passed, with integer types mapped to int32 as coremltools' `full` does. It registers only when coremltools has no `new_ones` of its own. No other operator was missing.
+- The trace raises two TracerWarnings, both on shape arithmetic that is constant under enumerated shapes: the mask padding length in `masking_utils` (mask length always equals the input length) and `is_causal` in the SDPA integration (a mask is always passed, so it is False). The mask itself stays a traced input. A quick check before the full parity run: on 100 validation windows of 26 to 506 tokens, padded to all three lengths, the FP16 package agreed with torch on 99.99% of tokens on CPU_ONLY. A dropped mask would have shown up on the padded windows.
+- Weight quantization uses `coremltools.optimize.coreml.linear_quantize_weights` on the FP16 package: INT8 symmetric per channel, and INT4 symmetric per block of 32 along the input axis. With the default `weight_threshold` of 2,048 elements, the token embedding is quantized too, so Core ML INT4 is 36.9 MB, against 118.3 MB for ONNX INT4, which leaves the embedding in FP32. FP16 is 130.5 MB and INT8 65.5 MB.
+
+## Core ML parity and dev-test accuracy
+
+Same 2,000 validation windows and reference as the ONNX parity. Files: `bench/results/parity/distilbert-*-coreml-*.json`, `bench/results/accuracy/distilbert-*-coreml-*.json`.
+
+| Precision | Compute units | Token agreement | Entity token agreement | Max logit difference | F1, model (95% CI) | F1, model and validators |
+|---|---|---|---|---|---|---|
+| fp16 | all | 1.0000 | 1.0000 | 0.021 | 0.728 [0.681, 0.771] | 0.836 |
+| fp16 | cpu-only | 1.0000 | 0.9999 | 0.226 | 0.729 [0.681, 0.773] | 0.837 |
+| int8 | all | 1.0000 | 0.9999 | 0.434 | 0.725 [0.674, 0.768] | 0.831 |
+| int8 | cpu-only | 0.9999 | 0.9999 | 0.376 | 0.725 [0.674, 0.768] | 0.831 |
+| int4 | all | 0.9994 | 0.9987 | 2.632 | 0.696 [0.643, 0.744] | 0.812 |
+| int4 | cpu-only | 0.9994 | 0.9987 | 2.567 | 0.696 [0.643, 0.744] | 0.812 |
+
+- The parity run was the check that the `new_ones` converter is correct: every build agrees with fp32 torch on at least 99.94% of tokens, padded to all three enumerated lengths.
+- Core ML int4 loses 0.033 overall F1 against fp32 (ONNX int4 loses 0.006). The two use the same block size of 32, but Core ML also quantizes the embedding and computes in FP16. Its interval still overlaps fp32's.
+
+## Latency on the M3
+
+Machine: Mac15,13 (MacBook Air, Apple M3, 8 GiB, no fan), macOS 26.1, other apps closed. One window at batch size 1, model call only, 20 warmup and 200 timed calls per length, 60 s idle before each build. `pmset -g therm` recorded no thermal or performance warning before or after any run. Files: `bench/results/latency/`. p50 / p95 in ms:
+
+| Build | 128 tokens | 256 tokens | 512 tokens |
+|---|---|---|---|
+| onnxruntime fp32 | 30.70 / 31.84 | 67.67 / 70.00 | 156.36 / 162.63 |
+| onnxruntime fp16 | 33.25 / 35.66 | 72.84 / 76.91 | 175.52 / 184.01 |
+| onnxruntime int8-dynamic | 11.82 / 12.31 | 27.62 / 29.11 | 75.99 / 78.85 |
+| onnxruntime int8-static | 14.25 / 14.78 | 32.79 / 33.69 | 87.07 / 89.85 |
+| onnxruntime int4 | 33.87 / 35.71 | 77.38 / 86.86 | 184.97 / 228.17 |
+| coreml fp16, all | 27.05 / 27.36 | 53.04 / 54.59 | 117.83 / 120.27 |
+| coreml fp16, cpu-only | 5.82 / 6.10 | 11.40 / 11.68 | 25.70 / 25.94 |
+| coreml int8, all | 27.16 / 27.49 | 52.72 / 53.29 | 117.63 / 118.18 |
+| coreml int8, cpu-only | 6.05 / 6.24 | 11.37 / 11.48 | 25.69 / 25.97 |
+| coreml int4, all | 5.26 / 5.42 | 9.37 / 9.50 | 18.13 / 18.31 |
+| coreml int4, cpu-only | 6.03 / 6.19 | 11.37 / 11.55 | 25.69 / 25.92 |
+
+- ONNX Runtime fp16 on the CPU is 12% slower than fp32 at 512 tokens (175.5 against 156.4 ms), as the plan expected. The converted graph adds Cast nodes to keep FP32 inputs and outputs; where the rest of the time goes was not profiled. Not optimized, per the plan.
+- ONNX int4 is slower than fp32 (185 against 156 ms at 512) and has the widest p95 (228 ms). It was built with the default `accuracy_level`, so activations stay FP32; the INT8-compute setting (level 4) was not tried. The INT8 builds are the fastest ONNX builds, about 2x fp32.
+- Every Core ML cpu-only build runs at about 25.7 ms at 512 tokens, whatever the weight precision, against 156 ms for ONNX Runtime fp32 on the same CPU.
+- The latency target is under 50 ms p95 per 512-token window on the Neural Engine. No build ran on the Neural Engine (next section). The fastest build, Core ML int4 with compute units all, ran on the GPU at 18.31 ms p95.
+
+## Neural Engine placement
+
+`edgeveil bench placement` reads the preferred device of each operation from coremltools 9.0's `MLComputePlan` (files: `bench/results/placement/`). For every build and both settings, 0 of 230 to 235 operations prefer the Neural Engine. With compute units all, fp16 and int8 place every operation on the CPU, and int4 places every operation on the GPU. Between 317 and 321 further operations report no device usage and are left out of the shares.
+
+A one-off diagnostic in the session scratchpad, not a results file, loaded the fp16 package with all four compute-unit settings and timed 50 calls (median, ms):
+
+| Compute units | Preferred device per plan | 128 tokens | 512 tokens |
+|---|---|---|---|
+| CPU_ONLY | cpu, all 231 | 6.17 | 25.70 |
+| CPU_AND_GPU | gpu, all 231 | 5.61 | 18.74 |
+| CPU_AND_NE | cpu, 230 | 26.90 | 117.06 |
+| ALL | cpu, 230 | 27.04 | 117.21 |
+
+- Under CPU_AND_NE the plan lists the Neural Engine among the supported devices for all 37 `linear` operations, yet it prefers the CPU for every operation. Why has not been established. Candidates include the shape-dependent operations the trace keeps (`shape`, `range_1d`, `tile`, `gather_nd`) and the int32 and bool mask arithmetic (`greater_equal`, `logical_and`, `select`) inside the graph. The Xcode performance report in docs/benchmarks.md is the next check.
+- When the Neural Engine is allowed, the CPU plan runs 4.5x slower than CPU_ONLY, and the fp16 build is closer to fp32 torch (max logit difference 0.021 against 0.226). One reading is that the two CPU paths compute at different precision. That has not been verified.
+- The spec's Neural Engine claim is not supported by this conversion. Per the plan, this is recorded rather than worked around.
