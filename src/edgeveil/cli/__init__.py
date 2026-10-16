@@ -6,6 +6,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from edgeveil.cli.bench import bench_app
 from edgeveil.cli.data import data_app
 from edgeveil.detector.builds import (
     Backend,
@@ -40,6 +41,7 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
 )
 app.add_typer(data_app, name="data")
+app.add_typer(bench_app, name="bench")
 error_console = Console(stderr=True)
 output_console = Console()
 
@@ -404,19 +406,3 @@ def tune_thresholds(
             f"F2 {point.f_beta:.3f}"
         )
     output_console.print(f"Saved to {path}.")
-
-
-@app.command(help="Run benchmarks and regenerate every results table.")
-def bench(
-    results_dir: Annotated[
-        Path, typer.Option(help="Directory with result files.")
-    ] = DEFAULT_RESULTS_DIR,
-) -> None:
-    from edgeveil.bench.tables import render_accuracy_tables
-
-    written = render_accuracy_tables(results_dir)
-    for path in written:
-        output_console.print(path.read_text())
-        output_console.print(f"Wrote {path}.")
-    if not written:
-        output_console.print(f"No accuracy results under {results_dir}.")
