@@ -1,5 +1,8 @@
 {
+  "detection": "model",
+  "preset": "distilbert",
   "model_dir": "models/distilbert",
+  "model_sha256": "c0eafef1bf82eec0c88765986160ff0874b2a74812e717fb4918a5549b502c06",
   "base_model": "distilbert/distilbert-base-cased",
   "base_model_revision": "6ea81172465e8b0ad3fddeed32b986cdcdcffcf0",
   "training_dataset_revision": "a785eb528e28be2693c3718a27e066970de5dadb",
@@ -33,6 +36,10 @@
     "GOV_ID": 0.55
   },
   "scoring": "final emitted spans re-encoded as IOB2, seqeval strict mode",
+  "secondary_scoring": {
+    "overlap": "a span matches if it overlaps a span of the same type",
+    "char_recall": "share of gold span characters covered by any emitted span"
+  },
   "bootstrap": {
     "unit": "snippet",
     "resamples": 1000,
@@ -201,6 +208,247 @@
         "high": 0.7484
       },
       "support": 377
+    }
+  },
+  "secondary_scores": {
+    "PERSON": {
+      "overlap_precision": {
+        "value": 0.9367,
+        "low": 0.8809,
+        "high": 0.9867
+      },
+      "overlap_recall": {
+        "value": 0.9867,
+        "low": 0.9535,
+        "high": 1.0
+      },
+      "char_recall": {
+        "value": 0.9725,
+        "low": 0.9348,
+        "high": 0.9977
+      }
+    },
+    "EMAIL": {
+      "overlap_precision": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      },
+      "overlap_recall": {
+        "value": 0.8889,
+        "low": 0.7804,
+        "high": 0.975
+      },
+      "char_recall": {
+        "value": 0.9072,
+        "low": 0.8305,
+        "high": 0.9724
+      }
+    },
+    "PHONE": {
+      "overlap_precision": {
+        "value": 0.5645,
+        "low": 0.4406,
+        "high": 0.6885
+      },
+      "overlap_recall": {
+        "value": 0.8095,
+        "low": 0.6896,
+        "high": 0.919
+      },
+      "char_recall": {
+        "value": 0.9138,
+        "low": 0.8342,
+        "high": 0.9716
+      }
+    },
+    "ADDRESS": {
+      "overlap_precision": {
+        "value": 0.6795,
+        "low": 0.5647,
+        "high": 0.789
+      },
+      "overlap_recall": {
+        "value": 0.9362,
+        "low": 0.8611,
+        "high": 1.0
+      },
+      "char_recall": {
+        "value": 0.9568,
+        "low": 0.9213,
+        "high": 0.9848
+      }
+    },
+    "CREDENTIAL": {
+      "overlap_precision": {
+        "value": 0.9286,
+        "low": 0.8333,
+        "high": 1.0
+      },
+      "overlap_recall": {
+        "value": 0.65,
+        "low": 0.5,
+        "high": 0.7956
+      },
+      "char_recall": {
+        "value": 0.759,
+        "low": 0.6211,
+        "high": 0.8845
+      }
+    },
+    "SSN": {
+      "overlap_precision": {
+        "value": 0.7368,
+        "low": 0.6249,
+        "high": 0.8491
+      },
+      "overlap_recall": {
+        "value": 0.9545,
+        "low": 0.8958,
+        "high": 1.0
+      },
+      "char_recall": {
+        "value": 0.9765,
+        "low": 0.948,
+        "high": 1.0
+      }
+    },
+    "CREDIT_CARD": {
+      "overlap_precision": {
+        "value": 1.0,
+        "low": 1.0,
+        "high": 1.0
+      },
+      "overlap_recall": {
+        "value": 0.2927,
+        "low": 0.15,
+        "high": 0.4387
+      },
+      "char_recall": {
+        "value": 0.9123,
+        "low": 0.839,
+        "high": 0.9797
+      }
+    },
+    "GOV_ID": {
+      "overlap_precision": {
+        "value": 0.75,
+        "low": 0.5999,
+        "high": 0.8839
+      },
+      "overlap_recall": {
+        "value": 0.7907,
+        "low": 0.6562,
+        "high": 0.9024
+      },
+      "char_recall": {
+        "value": 0.8735,
+        "low": 0.786,
+        "high": 0.9525
+      }
+    },
+    "overall": {
+      "overlap_precision": {
+        "value": 0.7882,
+        "low": 0.7397,
+        "high": 0.8292
+      },
+      "overlap_recall": {
+        "value": 0.8117,
+        "low": 0.7683,
+        "high": 0.8499
+      },
+      "char_recall": {
+        "value": 0.9107,
+        "low": 0.882,
+        "high": 0.937
+      }
+    }
+  },
+  "errors": {
+    "misses": {
+      "PERSON": {
+        "missed": 1,
+        "boundary": 5,
+        "wrong_type": 0
+      },
+      "EMAIL": {
+        "missed": 3,
+        "boundary": 5,
+        "wrong_type": 2
+      },
+      "PHONE": {
+        "missed": 1,
+        "boundary": 2,
+        "wrong_type": 7
+      },
+      "ADDRESS": {
+        "missed": 3,
+        "boundary": 7,
+        "wrong_type": 0
+      },
+      "CREDENTIAL": {
+        "missed": 11,
+        "boundary": 6,
+        "wrong_type": 3
+      },
+      "SSN": {
+        "missed": 2,
+        "boundary": 1,
+        "wrong_type": 0
+      },
+      "CREDIT_CARD": {
+        "missed": 2,
+        "boundary": 0,
+        "wrong_type": 27
+      },
+      "GOV_ID": {
+        "missed": 2,
+        "boundary": 5,
+        "wrong_type": 7
+      }
+    },
+    "false_positives": {
+      "PERSON": {
+        "spurious": 5,
+        "boundary": 5,
+        "wrong_type": 0
+      },
+      "EMAIL": {
+        "spurious": 0,
+        "boundary": 7,
+        "wrong_type": 0
+      },
+      "PHONE": {
+        "spurious": 0,
+        "boundary": 3,
+        "wrong_type": 27
+      },
+      "ADDRESS": {
+        "spurious": 17,
+        "boundary": 16,
+        "wrong_type": 8
+      },
+      "CREDENTIAL": {
+        "spurious": 2,
+        "boundary": 6,
+        "wrong_type": 0
+      },
+      "SSN": {
+        "spurious": 5,
+        "boundary": 1,
+        "wrong_type": 10
+      },
+      "CREDIT_CARD": {
+        "spurious": 0,
+        "boundary": 0,
+        "wrong_type": 0
+      },
+      "GOV_ID": {
+        "spurious": 5,
+        "boundary": 7,
+        "wrong_type": 7
+      }
     }
   },
   "environment": {
