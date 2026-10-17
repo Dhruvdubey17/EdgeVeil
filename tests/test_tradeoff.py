@@ -72,23 +72,59 @@ def test_missing_measurements_say_not_measured(tmp_path: Path) -> None:
     assert coreml[6] == NOT_MEASURED
 
 
-def test_summary_compares_the_fastest_neural_engine_and_cpu_builds(
-    tmp_path: Path,
-) -> None:
-    results = tmp_path / "results"
-    tables = tmp_path / "tables"
-    tables.mkdir()
-    cpu = latency()
-    neural_engine = {
+def neural_engine_build(units: str, p95: float) -> Any:
+    return {
         **latency(),
         "backend": "coreml-ane",
         "precision": "fp16",
-        "compute_units": "cpu-and-ne",
-        "lengths": {"512": {"p50_ms": 1.0, "p95_ms": 1.1}},
+        "compute_units": units,
+        "lengths": {"512": {"p50_ms": p95, "p95_ms": p95}},
     }
-    write(results / "latency" / "cpu.json", cpu)
-    write(results / "latency" / "ne.json", neural_engine)
+
+
+def power(units: str, millijoules: float) -> Any:
+    return {
+        **neural_engine_build(units, 0.0),
+        "millijoules_per_window_above_idle": {"total": millijoules},
+    }
+
+
+def summary_text(tmp_path: Path, with_power: bool) -> str:
+    results = tmp_path / "results"
+    tables = tmp_path / "tables"
+    tables.mkdir()
+    write(results / "latency" / "cpu.json", latency())
+    write(results / "latency" / "ne.json", neural_engine_build("cpu-and-ne", 2.0))
+    write(results / "latency" / "ne-cpu.json", neural_engine_build("cpu-only", 7.0))
+    model = {
+        **accuracy("model", "coreml-ane", "fp16"),
+        "compute_units": "cpu-and-ne",
+    }
+    write(results / "accuracy" / "ne.json", model)
+    if with_power:
+        write(results / "power" / "ne.json", power("cpu-and-ne", 10.0))
+        write(results / "power" / "ne-cpu.json", power("cpu-only", 45.0))
     [path] = render_tradeoff_tables(results, tables)
-    text = path.read_text()
-    assert "coreml-ane fp16 cpu-and-ne, 1.10 ms p95" in text
-    assert "onnxruntime int8-dynamic, 5.50 ms, 5.0x slower" in text
+    return path.read_text()
+
+
+def test_summary_leads_with_the_same_package_on_two_devices(tmp_path: Path) -> None:
+    text = summary_text(tmp_path, with_power=True)
+    matched = text.index("Same package, coreml-ane fp16, cpu-and-ne against cpu-only")
+    assert matched < text.index("Fastest build with compute units cpu-and-ne")
+    assert "2.00 against 7.00 ms p95 at 512 tokens, 3.5x faster" in text
+    assert "10.0 against 45.0 mJ per window above idle, 4.5x less energy" in text
+    assert "Dev-test F1 0.700 and not measured." in text
+
+
+def test_best_builds_carry_their_accuracy(tmp_path: Path) -> None:
+    text = summary_text(tmp_path, with_power=False)
+    assert "energy not measured" in text
+    assert (
+        "coreml-ane fp16 cpu-and-ne, 2.00 ms p95 at 512 tokens, dev-test F1 0.700"
+        in text
+    )
+    assert (
+        "onnxruntime int8-dynamic, 5.50 ms, dev-test F1 not measured; 2.8x slower"
+        in text
+    )

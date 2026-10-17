@@ -17,6 +17,7 @@ NOT_MEASURED = "not measured"
 NOT_APPLICABLE = "n/a"
 REFERENCE = "reference"
 REFERENCE_BUILD = (Backend.TORCH, Precision.FP32)
+MATCHED_BUILD = (Backend.COREML_ANE, Precision.FP16)
 OVERALL = "overall"
 BYTES_PER_MEGABYTE = 1_000_000
 LATENCY_LENGTHS = ("128", "256", "512")
@@ -240,7 +241,48 @@ def build_label(key: BuildKey) -> str:
     return f"{backend.value} {precision.value}{suffix}"
 
 
-def baseline_summary(collected: Mapping[BuildKey, BuildResults]) -> str:
+def model_f1(results: BuildResults | None) -> str:
+    if results is None or results.accuracy is None:
+        return NOT_MEASURED
+    return f"{results.accuracy['scores'][OVERALL]['f1']['value']:.3f}"
+
+
+def energy_above_idle(results: BuildResults | None) -> float | None:
+    if results is None or results.power is None:
+        return None
+    return results.power["millijoules_per_window_above_idle"]["total"]
+
+
+def energy_clause(fast: BuildResults | None, slow: BuildResults | None) -> str:
+    fast_energy, slow_energy = energy_above_idle(fast), energy_above_idle(slow)
+    if fast_energy is None or slow_energy is None:
+        return "energy not measured"
+    return (
+        f"{fast_energy:.1f} against {slow_energy:.1f} mJ per window above idle, "
+        f"{slow_energy / fast_energy:.1f}x less energy"
+    )
+
+
+def matched_summary(collected: Mapping[BuildKey, BuildResults]) -> str:
+    neural_engine = collected.get((*MATCHED_BUILD, ComputeUnits.CPU_AND_NE))
+    cpu = collected.get((*MATCHED_BUILD, ComputeUnits.CPU_ONLY))
+    ne_p95 = None if neural_engine is None else p95_at_longest(neural_engine)
+    cpu_p95 = None if cpu is None else p95_at_longest(cpu)
+    backend, precision = MATCHED_BUILD
+    lead = (
+        f"Same package, {backend.value} {precision.value}, cpu-and-ne against cpu-only"
+    )
+    if ne_p95 is None or cpu_p95 is None:
+        return f"{lead}: not measured."
+    return (
+        f"{lead}: {ne_p95:.2f} against {cpu_p95:.2f} ms p95 at "
+        f"{LATENCY_LENGTHS[-1]} tokens, {cpu_p95 / ne_p95:.1f}x faster; "
+        f"{energy_clause(neural_engine, cpu)}. Dev-test F1 {model_f1(neural_engine)} "
+        f"and {model_f1(cpu)}."
+    )
+
+
+def best_summary(collected: Mapping[BuildKey, BuildResults]) -> str:
     neural_engine = fastest(collected, is_neural_engine_only)
     cpu = fastest(collected, is_cpu_only)
     if neural_engine is None or cpu is None:
@@ -248,10 +290,15 @@ def baseline_summary(collected: Mapping[BuildKey, BuildResults]) -> str:
     (ne_key, ne_p95), (cpu_key, cpu_p95) = neural_engine, cpu
     return (
         f"Fastest build with compute units cpu-and-ne: {build_label(ne_key)}, "
-        f"{ne_p95:.2f} ms p95 at {LATENCY_LENGTHS[-1]} tokens. Fastest CPU-only "
-        f"build: {build_label(cpu_key)}, {cpu_p95:.2f} ms, "
-        f"{cpu_p95 / ne_p95:.1f}x slower."
+        f"{ne_p95:.2f} ms p95 at {LATENCY_LENGTHS[-1]} tokens, dev-test F1 "
+        f"{model_f1(collected[ne_key])}. Fastest CPU-only build: "
+        f"{build_label(cpu_key)}, {cpu_p95:.2f} ms, dev-test F1 "
+        f"{model_f1(collected[cpu_key])}; {cpu_p95 / ne_p95:.1f}x slower."
     )
+
+
+def baseline_summary(collected: Mapping[BuildKey, BuildResults]) -> str:
+    return f"{matched_summary(collected)}\n\n{best_summary(collected)}"
 
 
 def tradeoff_table(collected: Mapping[BuildKey, BuildResults]) -> str:

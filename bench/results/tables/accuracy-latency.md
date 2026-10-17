@@ -41,7 +41,9 @@ Accuracy against latency for every build. F1 is strict, overall, on the dev-test
 | coreml-ane | pal4 | cpu-and-gpu | 32.9 | not measured | not measured | not measured | not measured | not measured | not measured | not measured | 0.0% of 416 | not measured |
 | coreml-ane | pal4 | cpu-only | 32.9 | not measured | not measured | not measured | not measured | not measured | not measured | not measured | 0.0% of 416 | not measured |
 
-Fastest build with compute units cpu-and-ne: coreml-ane int4-per-channel cpu-and-ne, 5.32 ms p95 at 512 tokens. Fastest CPU-only build: coreml-ane fp16 cpu-only, 23.57 ms, 4.4x slower.
+Same package, coreml-ane fp16, cpu-and-ne against cpu-only: 6.38 against 23.57 ms p95 at 512 tokens, 3.7x faster; 47.9 against 216.6 mJ per window above idle, 4.5x less energy. Dev-test F1 0.727 and 0.730.
+
+Fastest build with compute units cpu-and-ne: coreml-ane int4-per-channel cpu-and-ne, 5.32 ms p95 at 512 tokens, dev-test F1 0.699. Fastest CPU-only build: coreml-ane fp16 cpu-only, 23.57 ms, dev-test F1 0.730; 4.4x slower.
 
 Sources:
 
