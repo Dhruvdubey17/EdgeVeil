@@ -16,6 +16,9 @@ sleep 5
 for units in cpu-only cpu-and-gpu cpu-and-ne; do
   uv run edgeveil bench power-loop --backend coreml-ane --precision fp16 --compute-units "$units"
 done
+for precision in int4-per-channel pal4; do
+  uv run edgeveil bench power-loop --backend coreml-ane --precision "$precision" --compute-units cpu-and-ne
+done
 uv run edgeveil bench power-loop --backend onnxruntime --precision int8-dynamic
 
 sudo kill -INT "$powermetrics_pid"
