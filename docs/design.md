@@ -562,7 +562,7 @@ The fastest CPU path on this machine is Core ML, not ONNX Runtime: the Neural En
 | cpu-and-gpu | GPU | 23.09 | 211.3 | 0.729 |
 | cpu-only | CPU | 23.57 | 216.6 | 0.730 |
 
-- Against the fastest CPU path, the Neural Engine is 3.7x faster and uses 4.5x less energy per window for the same weights. Against ONNX Runtime fp32 it is 25x faster. `edgeveil bench` prints the fastest-against-fastest comparison under the table; with the 4-bit builds below it is int4-per-channel on cpu-and-ne (5.32 ms) against fp16 cpu-only (23.57 ms), 4.4x.
+- Against the fastest CPU path, the Neural Engine is 3.7x faster and uses 4.5x less energy per window for the same weights. Against ONNX Runtime fp32 it is 25x faster. `edgeveil bench` prints this matched comparison first under the table (same package, fp16, cpu-and-ne against cpu-only, with each side's dev-test F1), then the fastest-against-fastest line, also with F1: int4-per-channel on cpu-and-ne (5.32 ms, F1 0.699) against fp16 cpu-only (23.57 ms, F1 0.730), 4.4x. The second line trades accuracy for speed, so it is not the headline.
 - Why Core ML's CPU path is 6.7x faster than ONNX Runtime fp32 on the same CPU. One window is 24.2 billion multiply-accumulates (48.3 GFLOP, counted from the model config), so Core ML cpu-only sustains about 2.1 TFLOP/s and ONNX Runtime fp32 about 0.31 TFLOP/s. The evidence:
   - Precision: with cpu-only, the fp16 package's largest logit difference from fp32 torch is 0.23, against 0.02 on the GPU and 0.06 on the Neural Engine. That deviation is what FP16 arithmetic produces; ONNX Runtime fp32 computes in FP32.
   - Compute, not memory: v1 cpu-only runs at 25.69 to 25.70 ms whether the weights are fp16 (130.5 MB), int8 (65.5 MB), or int4 (36.9 MB), so weight bandwidth does not set its speed.
@@ -586,7 +586,37 @@ The block-quantized int4 build never placed on the Neural Engine. Two more 4-bit
 
 - Both variants place on the Neural Engine exactly like int8 (404 of 416; the same 12 embedding operations stay on the CPU). The blocker for int4 was the per-block granularity, not the bit width.
 - pal4 keeps more accuracy: 0.716 against 0.699 model-only, and 0.833 with validators, equal to fp16 on the Neural Engine (0.833). int4-per-channel is the fastest build measured (5.32 ms p95), pal4 runs at fp16 speed (6.44 ms).
-- Energy for these builds is not measured; it needs another sudo run of `scripts/measure_power.sh` with them added.
+- Energy for these builds is not measured yet. `scripts/measure_power.sh` now includes a cpu-and-ne loop for each; the next sudo run re-measures all six loops in one session.
+
+## Recommended Neural Engine build: pal4
+
+pal4 (4-bit palettized weights in the Neural Engine layout) is the recommended build for the proxy on Apple silicon:
+
+| | pal4, cpu-and-ne | fp16, cpu-and-ne |
+|---|---|---|
+| Size | 32.9 MB | 130.6 MB |
+| F1, model and validators (dev-test) | 0.833 | 0.833 |
+| F1, model only (95% CI) | 0.716 [0.665, 0.760] | 0.727 [0.677, 0.769] |
+| p50 / p95 ms, 512 tokens | 6.38 / 6.44 | 6.32 / 6.38 |
+| Operations on the Neural Engine | 404 of 416 | 404 of 412 |
+| Token agreement with fp32 torch | 0.9988 | 1.0000 |
+
+- With validators, which is how the proxy runs, pal4 matches fp16 overall at 25% of the size and within 0.06 ms at p95.
+- The cost is 0.011 model-only F1 (intervals overlap) and slightly lower token agreement.
+- Equal overall F1 hides a shift between types. With validators, pal4 against fp16 (recall in found / gold spans):
+
+  | Type | F1, fp16 | F1, pal4 | Recall, fp16 | Recall, pal4 |
+  |---|---|---|---|---|
+  | GOV_ID | 0.714 | 0.581 | 30 / 43 | 27 / 43 |
+  | CREDENTIAL | 0.657 | 0.647 | 23 / 40 | 22 / 40 |
+  | SSN | 0.845 | 0.837 | 41 / 44 | 41 / 44 |
+  | PHONE | 0.897 | 0.943 | 39 / 42 | 41 / 42 |
+  | ADDRESS | 0.592 | 0.656 | 37 / 47 | 39 / 47 |
+  | PERSON | 0.961 | 0.968 | 74 / 75 | 75 / 75 |
+
+  Overall recall is 0.874 for fp16 and 0.877 for pal4, but pal4 misses 3 more government IDs and 1 more credential. On a set this small that is within noise for each type, yet it is the kind of miss the spec weighs most, so the recommendation holds with that caveat: check GOV_ID and CREDENTIAL recall again on the held-out set before shipping pal4.
+- int4-per-channel is faster (5.32 ms p95) and the same size (33.0 MB), but loses 0.020 F1 with validators (0.813), so it is not recommended.
+- Energy per window for pal4 is still to be measured.
 
 ## Repository size check
 
