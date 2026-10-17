@@ -24,7 +24,7 @@ bench_app = typer.Typer(
     invoke_without_command=True,
 )
 console = Console()
-error_console = Console(stderr=True)
+error_console = Console(stderr=True, soft_wrap=True)
 
 ResultsDir = Annotated[Path, typer.Option(help="Directory with result files.")]
 ModelsDir = Annotated[Path, typer.Option(help="Directory with trained models.")]

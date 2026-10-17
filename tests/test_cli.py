@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from edgeveil.cli import NOT_IMPLEMENTED_EXIT_CODE, USAGE_EXIT_CODE, app
+from edgeveil.cli import (
+    NOT_IMPLEMENTED_EXIT_CODE,
+    USAGE_EXIT_CODE,
+    app,
+    error_console,
+)
 
 runner = CliRunner()
 
@@ -29,7 +34,13 @@ def test_unsupported_precision_names_the_supported_ones(command: str) -> None:
     assert "int8-dynamic" in result.stderr
 
 
-def test_eval_of_a_missing_build_says_how_to_build_it(tmp_path: Path) -> None:
+NARROW_TERMINAL_COLUMNS = 40
+
+
+def test_eval_of_a_missing_build_says_how_to_build_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(error_console, "width", NARROW_TERMINAL_COLUMNS)
     arguments = ["eval", "--precision", "fp16", "--backend", "onnxruntime"]
     result = runner.invoke(app, [*arguments, "--models-dir", str(tmp_path)])
     assert result.exit_code == USAGE_EXIT_CODE

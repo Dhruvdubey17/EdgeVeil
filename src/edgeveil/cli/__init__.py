@@ -42,7 +42,7 @@ app = typer.Typer(
 )
 app.add_typer(data_app, name="data")
 app.add_typer(bench_app, name="bench")
-error_console = Console(stderr=True)
+error_console = Console(stderr=True, soft_wrap=True)
 output_console = Console()
 
 
