@@ -1,0 +1,45 @@
+{
+  "precision": "int4-per-channel",
+  "backend": "coreml-ane",
+  "compute_units": "cpu-and-ne",
+  "build": {
+    "model_dir": "models/distilbert",
+    "backend": "coreml-ane",
+    "precision": "int4-per-channel",
+    "compute_units": "cpu-and-ne",
+    "path": "models/distilbert/coreml-ane/int4-per-channel.mlpackage",
+    "sha256": "36c47ad5d61d1ae5bd27c57088fbb63d3fbf8a2693663b5893ee98a758312e94",
+    "size_bytes": 33023402,
+    "quantization": "Neural Engine layout, INT4 weights per channel"
+  },
+  "loop": {
+    "idle": {
+      "start": 1792432023.294847,
+      "end": 1792432053.299517
+    },
+    "inference": {
+      "start": 1792432053.2995672,
+      "end": 1792432113.300127
+    },
+    "windows": 11452,
+    "window_tokens": 512
+  },
+  "environment": {
+    "chip": "Apple M3",
+    "machine_model": "Mac15,13",
+    "memory_bytes": "8589934592",
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.1",
+      "transformers": "5.19.0",
+      "tokenizers": "0.23.2",
+      "datasets": "5.1.0",
+      "seqeval": "1.2.2",
+      "onnxruntime": "1.30.0",
+      "coremltools": "9.0",
+      "onnx": "1.23.2",
+      "onnxscript": "0.7.2"
+    }
+  }
+}

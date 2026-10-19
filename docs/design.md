@@ -500,20 +500,27 @@ Latency of the Neural Engine layout (same machine and method as the latency sect
 
 ## Energy per window
 
-`bash scripts/measure_power.sh`, run by hand with sudo on 2026-10-16 with other apps closed: `powermetrics --samplers cpu_power,gpu_power,ane_power -i 500 -f plist`, 846 samples over 428 s. Each loop idled 30 s, then ran one 512-token window in a loop for 60 s. Files: `bench/results/power/*.json` (the samples used are stored in each file; the raw 22 MB plist is not committed) and the loop timestamps in `bench/results/power/loops/`.
+`bash scripts/measure_power.sh`, run by hand with sudo and other apps closed: `powermetrics --samplers cpu_power,gpu_power,ane_power -i 500 -f plist`. Each loop idles 30 s, then runs one 512-token window in a loop for 60 s. Files: `bench/results/power/*.json` (each stores the samples it used; the raw plists are not committed) and the loop timestamps in `bench/results/power/loops/`. Two sessions:
 
-| Build | Compute units | Windows per second | Mean power in loop, CPU / GPU / ANE (mW) | mJ per window, above idle |
-|---|---|---|---|---|
-| coreml-ane fp16 | cpu-and-ne | 159.4 | 551 / 3 / 7,108 | 47.9 |
-| coreml-ane fp16 | cpu-and-gpu | 44.8 | 1,110 / 8,385 / 0 | 211.3 |
-| coreml-ane fp16 | cpu-only | 42.9 | 9,343 / 0 / 0 | 216.6 |
-| onnxruntime int8-dynamic | n/a | 13.6 | 13,601 / 14 / 0 | 986.4 |
+- 2026-10-16: four loops, 846 samples over 428 s, 22 MB plist. Its results are in git at commit 40976fb.
+- 2026-10-19: six loops, all re-measured, 1,466 samples over 744 s, 38.6 MB plist. The committed results and the table come from this session.
 
-- On the Neural Engine a window costs 47.9 mJ above idle: 4.4x less than the same package on the GPU (211.3 mJ) and 4.5x less than on the CPU (216.6 mJ), and 20.6x less than ONNX Runtime int8-dynamic (986.4 mJ). All four are rows of `bench/results/tables/accuracy-latency.md`; the three Core ML rows are the same package (SHA-256 d9620925...).
-- The parser was written before a real log existed; checked against this one: the keys are `processor.cpu_power`, `gpu_power`, and `ane_power` as assumed, each equals its `*_energy` field divided by `elapsed_ns` (so the unit is mW), and accumulated `elapsed_ns` (428.7 s) matches the timestamp span (428 s), within the 2 s edge trim.
-- Loop throughput agrees with the latency runs: 159.4 windows per second is 6.27 ms per window on the Neural Engine (latency p50 6.33 ms), and 13.6 per second is 73.5 ms for ONNX int8-dynamic (p50 75.99 ms).
+| Build | Compute units | Windows per second | Mean power in loop, CPU / GPU / ANE (mW) | mJ per window, above idle | Same, 2026-10-16 |
+|---|---|---|---|---|---|
+| coreml-ane int4-per-channel | cpu-and-ne | 190.9 | 407 / 0 / 6,798 | 37.6 | not measured |
+| coreml-ane fp16 | cpu-and-ne | 160.9 | 363 / 0 / 7,162 | 46.2 | 47.9 |
+| coreml-ane pal4 | cpu-and-ne | 158.3 | 785 / 0 / 6,576 | 46.4 | not measured |
+| coreml-ane fp16 | cpu-and-gpu | 44.1 | 359 / 5,824 / 0 | 139.0 | 211.3 |
+| coreml-ane fp16 | cpu-only | 43.0 | 9,174 / 6 / 0 | 213.0 | 216.6 |
+| onnxruntime int8-dynamic | n/a | 14.5 | 16,669 / 0 / 0 | 1,145.4 | 986.4 |
+
+- On the Neural Engine the fp16 package costs 46.2 mJ per window above idle: 4.6x less than the same package on the CPU (213.0 mJ), 3.0x less than on the GPU (139.0 mJ), and 24.8x less than ONNX Runtime int8-dynamic (1,145.4 mJ). The three fp16 rows are the same package (SHA-256 d9620925...) in both sessions, on the same OS.
+- pal4 costs the same as fp16 (46.4 against 46.2 mJ). int4-per-channel is the cheapest build measured, 37.6 mJ, and the fastest (190.9 windows per second).
+- Run-to-run variation: the Neural Engine and CPU loops reproduced within 4% between sessions. The GPU loop did not: at the same throughput (44.8 and 44.1 windows per second), mean GPU power fell from 8,385 to 5,824 mW and CPU power from 1,110 to 359 mW, so its energy per window fell 34%. ONNX Runtime rose 16% (CPU power 13,601 to 16,669 mW at 6% higher throughput). The logs do not show why; GPU frequency and power states are not in the sampled fields. So the GPU comparison is 3.0x in this session and 4.4x in the first; the CPU comparison is 4.6x and 4.5x.
+- The parser was written before a real log existed and was checked against the first one: the keys are `processor.cpu_power`, `gpu_power`, and `ane_power` as assumed, each equals its `*_energy` field divided by `elapsed_ns` (so the unit is mW), and accumulated `elapsed_ns` matches the timestamp span within the 2 s edge trim (428.7 against 428 s; second session 743.5 against 744 s).
+- Loop throughput agrees with the latency runs: 160.9 windows per second is 6.22 ms per window for fp16 on the Neural Engine (latency p50 6.32 ms), and 14.5 per second is 69.0 ms for ONNX int8-dynamic (p50 75.99 ms).
 - These are the rail estimates `powermetrics` reports for CPU, GPU, and Neural Engine. They leave out DRAM and the rest of the system, and they are not a wall-power measurement.
-- Idle power differed between loops (28 to 152 mW CPU); the above-idle column subtracts each loop's own idle phase.
+- Idle power differs between loops (21 to 92 mW CPU in the second session); the above-idle column subtracts each loop's own idle phase.
 
 ## Why v1 fp16 is slower with compute units all
 
@@ -558,11 +565,11 @@ The fastest CPU path on this machine is Core ML, not ONNX Runtime: the Neural En
 
 | Compute units | Device per plan | p95 ms, 512 tokens | mJ per window, above idle | F1, model |
 |---|---|---|---|---|
-| cpu-and-ne | Neural Engine (404 of 412 ops) | 6.38 | 47.9 | 0.727 |
-| cpu-and-gpu | GPU | 23.09 | 211.3 | 0.729 |
-| cpu-only | CPU | 23.57 | 216.6 | 0.730 |
+| cpu-and-ne | Neural Engine (404 of 412 ops) | 6.38 | 46.2 | 0.727 |
+| cpu-and-gpu | GPU | 23.09 | 139.0 | 0.729 |
+| cpu-only | CPU | 23.57 | 213.0 | 0.730 |
 
-- Against the fastest CPU path, the Neural Engine is 3.7x faster and uses 4.5x less energy per window for the same weights. Against ONNX Runtime fp32 it is 25x faster. `edgeveil bench` prints this matched comparison first under the table (same package, fp16, cpu-and-ne against cpu-only, with each side's dev-test F1), then the fastest-against-fastest line, also with F1: int4-per-channel on cpu-and-ne (5.32 ms, F1 0.699) against fp16 cpu-only (23.57 ms, F1 0.730), 4.4x. The second line trades accuracy for speed, so it is not the headline.
+- Against the fastest CPU path, the Neural Engine is 3.7x faster and uses 4.6x less energy per window for the same weights (4.5x in the first power session). Against ONNX Runtime fp32 it is 25x faster. `edgeveil bench` prints this matched comparison first under the table (same package, fp16, cpu-and-ne against cpu-only, with each side's dev-test F1), then the fastest-against-fastest line, also with F1: int4-per-channel on cpu-and-ne (5.32 ms, F1 0.699) against fp16 cpu-only (23.57 ms, F1 0.730), 4.4x. The second line trades accuracy for speed, so it is not the headline.
 - Why Core ML's CPU path is 6.7x faster than ONNX Runtime fp32 on the same CPU. One window is 24.2 billion multiply-accumulates (48.3 GFLOP, counted from the model config), so Core ML cpu-only sustains about 2.1 TFLOP/s and ONNX Runtime fp32 about 0.31 TFLOP/s. The evidence:
   - Precision: with cpu-only, the fp16 package's largest logit difference from fp32 torch is 0.23, against 0.02 on the GPU and 0.06 on the Neural Engine. That deviation is what FP16 arithmetic produces; ONNX Runtime fp32 computes in FP32.
   - Compute, not memory: v1 cpu-only runs at 25.69 to 25.70 ms whether the weights are fp16 (130.5 MB), int8 (65.5 MB), or int4 (36.9 MB), so weight bandwidth does not set its speed.
@@ -586,7 +593,7 @@ The block-quantized int4 build never placed on the Neural Engine. Two more 4-bit
 
 - Both variants place on the Neural Engine exactly like int8 (404 of 416; the same 12 embedding operations stay on the CPU). The blocker for int4 was the per-block granularity, not the bit width.
 - pal4 keeps more accuracy: 0.716 against 0.699 model-only, and 0.833 with validators, equal to fp16 on the Neural Engine (0.833). int4-per-channel is the fastest build measured (5.32 ms p95), pal4 runs at fp16 speed (6.44 ms).
-- Energy for these builds is not measured yet. `scripts/measure_power.sh` now includes a cpu-and-ne loop for each; the next sudo run re-measures all six loops in one session.
+- Energy per window on cpu-and-ne: int4-per-channel 37.6 mJ, pal4 46.4 mJ, against 46.2 mJ for fp16 (second power session).
 
 ## Recommended Neural Engine build: pal4
 
@@ -598,6 +605,7 @@ pal4 (4-bit palettized weights in the Neural Engine layout) is the recommended b
 | F1, model and validators (dev-test) | 0.833 | 0.833 |
 | F1, model only (95% CI) | 0.716 [0.665, 0.760] | 0.727 [0.677, 0.769] |
 | p50 / p95 ms, 512 tokens | 6.38 / 6.44 | 6.32 / 6.38 |
+| mJ per window, above idle | 46.4 | 46.2 |
 | Operations on the Neural Engine | 404 of 416 | 404 of 412 |
 | Token agreement with fp32 torch | 0.9988 | 1.0000 |
 
@@ -616,7 +624,7 @@ pal4 (4-bit palettized weights in the Neural Engine layout) is the recommended b
 
   Overall recall is 0.874 for fp16 and 0.877 for pal4, but pal4 misses 3 more government IDs and 1 more credential. On a set this small that is within noise for each type, yet it is the kind of miss the spec weighs most, so the recommendation holds with that caveat: check GOV_ID and CREDENTIAL recall again on the held-out set before shipping pal4.
 - int4-per-channel is faster (5.32 ms p95) and the same size (33.0 MB), but loses 0.020 F1 with validators (0.813), so it is not recommended.
-- Energy per window for pal4 is still to be measured.
+- Energy per window is the same as fp16: 46.4 against 46.2 mJ above idle. int4-per-channel uses 37.6 mJ, which does not change the recommendation given its accuracy loss.
 
 ## Repository size check
 
